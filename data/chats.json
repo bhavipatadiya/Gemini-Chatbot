@@ -1,0 +1,350 @@
+[
+  {
+    "id": 1,
+    "title": "<p>Understanding Computer Networks</p>",
+    "messages": [
+      {
+        "role": "user",
+        "content": "what is network?? explain in detail"
+      },
+      {
+        "role": "bot",
+        "content": "<p>A computer network is a collection of interconnected devices that communicate and share resources, such as hardware, data, or internet access, through wired or wireless connections.</p>\n<p>Basically, a network acts as the digital infrastructure that allows information to flow between different endpoints, enabling collaboration and remote communication.</p>\n<ol>\n<li>Components of a Network</li>\n<li>Nodes: Any physical device on the network, such as computers, smartphones, servers, or printers.</li>\n<li>Links: The medium used to connect devices, which can be cables (Ethernet, fiber optics) or wireless (Wi-Fi, Bluetooth).</li>\n<li>Network Devices: Specialized hardware that manages traffic, such as routers, switches, and modems.</li>\n<li>\n<p>Protocols: Standard rules that govern how data is formatted and transmitted, such as TCP/IP.</p>\n</li>\n<li>\n<p>Common Network Types</p>\n</li>\n<li>LAN (Local Area Network): Connects devices over a small distance, like inside a single home or office.</li>\n<li>WAN (Wide Area Network): Spans a large geographical area, often connecting multiple smaller networks across cities or countries.</li>\n<li>WLAN (Wireless Local Area Network): A LAN that uses wireless technology instead of cables to connect devices.</li>\n<li>\n<p>PAN (Personal Area Network): A small network used for communication among devices close to an individual, such as pairing a phone with wireless headphones.</p>\n</li>\n<li>\n<p>Key Functions</p>\n</li>\n<li>Resource Sharing: Users can share expensive hardware like printers or scanners across multiple devices.</li>\n<li>Data Centralization: Storing files on a central server allows users to access information from various locations.</li>\n<li>Communication: Networks enable real-time messaging, email, and video conferencing across the globe.</li>\n<li>Security Management: Administrators can control access rights and protect data through firewalls and authentication protocols.</li>\n</ol>\n<p>Let me know if you would like me to dive deeper into any of these specific areas.</p>"
+      },
+      {
+        "role": "user",
+        "content": "explain its types"
+      },
+      {
+        "role": "bot",
+        "content": "<p>To provide an accurate explanation, please specify which subject or concept you are referring to. Since the context is missing, I cannot detail the specific types you are interested in.</p>\n<p>Let me know what topic you would like me to break down, and I will be happy to help.</p>"
+      },
+      {
+        "role": "user",
+        "content": "explain the types of network"
+      },
+      {
+        "role": "bot",
+        "content": "<p>In simple terms, a network is a group of connected devices that share resources and data, categorized primarily by their geographic scale and reach.</p>\n<ol>\n<li>Types of Network Coverage</li>\n<li><strong>PAN (Personal Area Network):</strong> Covers a very small area, typically a single person's workspace, such as connecting a smartphone to a Bluetooth headset.</li>\n<li><strong>LAN (Local Area Network):</strong> Connects devices within a limited physical area like a home, office, or building.</li>\n<li><strong>MAN (Metropolitan Area Network):</strong> Spans a larger geographic area, such as an entire city or a large campus.</li>\n<li><strong>WAN (Wide Area Network):</strong> Connects devices over vast distances, potentially across countries or continents, with the internet being the most well-known example.</li>\n</ol>\n<p>Let me know if you need more details on how these connect.</p>"
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "title": "India population five years",
+    "messages": [
+      {
+        "role": "user",
+        "content": "give me the population in india for 5 year",
+        "pdfs": []
+      },
+      {
+        "role": "bot",
+        "content": "<p>In simple terms, India's population has shown steady growth over the last five years based on United Nations projections and government estimates.</p>\n<ul>\n<li>2020: 1.396 billion</li>\n<li>2021: 1.408 billion</li>\n<li>2022: 1.417 billion</li>\n<li>2023: 1.428 billion</li>\n<li>2024: 1.441 billion</li>\n</ul>",
+        "msgId": "bot-1776403875268-269",
+        "selected_view": "chart",
+        "chart_type": "bar",
+        "extracted_data": {
+          "labels": [
+            "2020",
+            "2021",
+            "2022",
+            "2023",
+            "2024"
+          ],
+          "values": [
+            1.396,
+            1.408,
+            1.417,
+            1.428,
+            1.441
+          ],
+          "xLabel": "Year",
+          "yLabel": "Population (billions)",
+          "headers": [
+            "Year",
+            "Population (billions)"
+          ],
+          "rows": [
+            [
+              "2020",
+              "1.396"
+            ],
+            [
+              "2021",
+              "1.408"
+            ],
+            [
+              "2022",
+              "1.417"
+            ],
+            [
+              "2023",
+              "1.428"
+            ],
+            [
+              "2024",
+              "1.441"
+            ]
+          ]
+        }
+      }
+    ],
+    "pdfs": []
+  },
+  {
+    "id": 3,
+    "title": "LAN MAN WAN differences",
+    "messages": [
+      {
+        "role": "user",
+        "content": "difference between lan,man and wan",
+        "pdfs": []
+      },
+      {
+        "role": "bot",
+        "content": "<p>LAN, MAN, and WAN are classifications of computer networks categorized primarily by their geographical scope and the infrastructure used to connect devices. A Local Area Network (LAN) covers a small area like a home or office, a Metropolitan Area Network (MAN) spans a city or large campus, and a Wide Area Network (WAN) connects locations across countries or continents.</p>\n<p>The primary differences between these network types are as follows:</p>\n<p>Geographical Coverage<br />\n- LANs typically operate within a single room, building, or small cluster of buildings.<br />\n- MANs extend across a city or a large educational or corporate campus.<br />\n- WANs cover vast distances, spanning cities, states, countries, or the entire globe.</p>\n<p>Data Transfer Speed<br />\n- LANs offer the highest data transmission speeds due to the short physical distance and dedicated cabling.<br />\n- MANs generally provide moderate speeds that fall between LAN and WAN capabilities.<br />\n- WANs often have the slowest speeds and higher latency because data must travel over long-distance infrastructure like satellite links or undersea cables.</p>\n<p>Ownership and Maintenance<br />\n- LANs are usually privately owned and maintained by a single person or organization.<br />\n- MANs are often managed by a consortium of users or a local internet service provider.<br />\n- WANs are typically maintained by multiple public or private telecommunications service providers.</p>\n<p>Cost and Complexity<br />\n- LANs are the least expensive to set up and manage due to their limited hardware requirements.<br />\n- MANs incur higher costs due to the need for public right-of-way permissions and city-wide infrastructure.<br />\n- WANs are the most complex and expensive to implement, often involving massive infrastructure investments and complex routing protocols.</p>",
+        "msgId": "bot-1776759695462-2002",
+        "selected_view": "table",
+        "extracted_data": {
+          "headers": [
+            "Feature",
+            "LAN",
+            "MAN",
+            "WAN"
+          ],
+          "rows": [
+            [
+              "Geographical Coverage",
+              "Room or building",
+              "City or campus",
+              "Countries or globe"
+            ],
+            [
+              "Data Transfer Speed",
+              "Highest",
+              "Moderate",
+              "Lowest"
+            ],
+            [
+              "Ownership and Maintenance",
+              "Private",
+              "Consortium or ISP",
+              "Multiple telecommunications providers"
+            ],
+            [
+              "Cost and Complexity",
+              "Low",
+              "Moderate",
+              "High"
+            ]
+          ],
+          "labels": [
+            "Geographical Coverage",
+            "Data Transfer Speed",
+            "Ownership and Maintenance",
+            "Cost and Complexity"
+          ],
+          "values": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "xLabel": "Feature",
+          "yLabel": "LAN",
+          "source": "gemini_generated"
+        },
+        "viz_explanation": "<p>This table compares the fundamental technical and operational characteristics of Local Area Networks (LAN), Metropolitan Area Networks (MAN), and Wide Area Networks (WAN).</p>\n<ol>\n  <li><strong>Inverse Relationship Between Speed and Coverage</strong>\n    <ul>\n      <li>As the geographical scale increases from the room-level LAN to global WAN systems, the data transfer speed consistently declines.</li>\n      <li>LANs provide the highest speeds, whereas WANs offer the lowest, highlighting the performance trade-off required for larger network reaches.</li>\n    </ul>\n  </li>\n  <li><strong>Scalability and Operational Complexity</strong>\n    <ul>\n      <li>Cost and complexity increase alongside geographical distance, transitioning from low for private LANs to high for multi-provider WANs.</li>\n      <li>Ownership structures shift from simple private control in LANs to complex arrangements involving multiple telecommunications providers for WANs.</li>\n    </ul>\n  </li>\n</ol>"
+      }
+    ],
+    "pdfs": [],
+    "topic": null
+  },
+  {
+    "id": 4,
+    "title": "India Gold Price History",
+    "messages": [
+      {
+        "role": "user",
+        "content": "give me the gold rating in india for 5 year",
+        "pdfs": []
+      },
+      {
+        "role": "bot",
+        "content": "<p>The price of gold in India has experienced a significant upward trend over the last five years, driven by market demand, global economic conditions, and currency fluctuations. The following figures represent the approximate average price of 24-karat gold per 10 grams for the corresponding years:</p>\n<ol>\n<li>2020: The average price was approximately 48,000 INR per 10 grams.</li>\n<li>2021: The price remained relatively stable, averaging around 48,500 INR per 10 grams.</li>\n<li>2022: Gold prices increased to an average of approximately 52,000 INR per 10 grams.</li>\n<li>2023: The market saw further growth, with prices averaging near 59,000 INR per 10 grams.</li>\n<li>2024: Gold prices have surged significantly, currently trading in the range of 72,000 to 78,000 INR per 10 grams depending on market volatility.</li>\n</ol>",
+        "msgId": "bot-1776489482571-4303",
+        "selected_view": "chart",
+        "chart_type": "bar",
+        "extracted_data": {
+          "labels": [
+            "2020",
+            "2021",
+            "2022",
+            "2023",
+            "2024"
+          ],
+          "values": [
+            48000,
+            48500,
+            52000,
+            59000,
+            75000
+          ],
+          "xLabel": "Year",
+          "yLabel": "Price (INR per 10g)",
+          "headers": [
+            "Year",
+            "Average Price (INR)"
+          ],
+          "rows": [
+            [
+              "2020",
+              "48000"
+            ],
+            [
+              "2021",
+              "48500"
+            ],
+            [
+              "2022",
+              "52000"
+            ],
+            [
+              "2023",
+              "59000"
+            ],
+            [
+              "2024",
+              "75000"
+            ]
+          ]
+        },
+        "viz_explanation": "<p>This bar chart illustrates the significant upward trend in the price of gold per 10 grams in India between 2020 and 2024.</p>\n<ol>\n  <li><strong>Consistent Price Growth</strong>\n    <ul>\n      <li>The price has risen steadily from 48,000 INR in 2020 to 75,000 INR in 2024.</li>\n      <li>This indicates a long-term appreciation in the value of gold over the observed five-year period.</li>\n    </ul>\n  </li>\n  <li><strong>Record High and Low</strong>\n    <ul>\n      <li>The lowest price recorded during this timeframe was 48,000 INR in 2020.</li>\n      <li>The highest value reached is 75,000 INR in 2024, marking a substantial increase of over 50% since the start of the period.</li>\n    </ul>\n  </li>\n  <li><strong>Accelerated Market Momentum</strong>\n    <ul>\n      <li>While price growth was gradual between 2020 and 2021, the increase became much steeper starting in 2023.</li>\n      <li>The jump from 59,000 INR in 2023 to 75,000 INR in 2024 represents the largest year-over-year price spike in the dataset.</li>\n    </ul>\n  </li>\n</ol>"
+      },
+      {
+        "role": "user",
+        "content": "what is IP address",
+        "pdfs": []
+      },
+      {
+        "role": "bot",
+        "content": "<p>An IP address, or Internet Protocol address, is a unique numerical label assigned to each device connected to a computer network that uses the Internet Protocol for communication. It acts as an identifier that allows devices to locate and communicate with each other across the internet.</p>",
+        "msgId": "bot-1776490741264-4263"
+      }
+    ],
+    "pdfs": []
+  },
+  {
+    "id": 5,
+    "title": "PDF Document Summary",
+    "messages": [
+      {
+        "role": "user",
+        "content": "explain the pdf",
+        "pdfs": [
+          {
+            "name": "SMB_University_120307_Networking_Fundamentals.pdf"
+          }
+        ]
+      },
+      {
+        "role": "bot",
+        "content": "<p>This document provides an introductory overview of networking fundamentals intended for Cisco SMB foundation solutions. It covers essential network concepts, including architecture, the OSI model, transmission media, and hardware devices.</p>\n<ol>\n<li>Network Basics and Topology</li>\n<li>A network connects two or more computers to share resources like data, printers, or internet access.</li>\n<li>Network types include Local Area Network (LAN), Metropolitan Area Network (MAN), and Wide Area Network (WAN).</li>\n<li>\n<p>Common topologies include Bus, Star, and Extended Star configurations.</p>\n</li>\n<li>\n<p>The OSI Model</p>\n</li>\n<li>The model consists of seven layers: Application, Presentation, Session, Transport, Network, Data Link, and Physical.</li>\n<li>Layering reduces network complexity, standardizes interfaces, and ensures interoperable technology.</li>\n<li>\n<p>Each layer performs specific roles, ranging from data representation at the top to binary transmission at the physical layer.</p>\n</li>\n<li>\n<p>Physical Media and WAN Technologies</p>\n</li>\n<li>Media types include twisted-pair, coaxial, fiber optics, and wireless connections, each varying in bandwidth, distance, and cost.</li>\n<li>WAN technologies utilize various methods such as circuit-switched, leased lines, broadband access, and Frame-Relay.</li>\n<li>\n<p>Physical layer implementations for WANs include specific cables, modems, and interface standards like RJ-48 and V.35.</p>\n</li>\n<li>\n<p>Network Hardware</p>\n</li>\n<li>Hubs act as central connection points that repeat signals to all ports.</li>\n<li>The document also references the use of Network Interface Cards for device connectivity.</li>\n</ol>",
+        "msgId": "bot-1776667292448-8526"
+      }
+    ],
+    "pdfs": [
+      {
+        "name": "SMB_University_120307_Networking_Fundamentals.pdf",
+        "content": "--- Page 1 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-1\nSMB University: Selling Cisco SMB Foundation Solutions\nNetworking Fundamentals\n\n--- Page 2 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-2\nObjectives\n• Describe the function and operation of a hub, a switch and a \nrouter\n• Describe the function and operation of a firewall and a \ngateway\n• Describe the function and operation of Layer 2 switching, \nLayer 3 switching, and routing\n• Identify the layers of the OSI model\n• Describe the functionality of LAN, MAN, and WAN networks\n• Identify the possible media types for LAN and WAN \nconnections\n\n--- Page 3 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-3\nWhat is a Network?\n• A network refers to two or more connected computers that \ncan share resources such as data, a printer, an Internet \nconnection, applications, or a combination of these \nresources.\n\n--- Page 4 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-4\nTypes of Networks\nLocal Area Network (LAN)\nMetropolitan Area Network (MAN)\nWide Area Network (WAN) \n\n--- Page 5 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-5\nWAN Technologies\nCircuit-switched\nAsynchronous serial. ISDN Layer 1\nTELEPHONE\nCOMPANY\nLeased Line\nSynchronous serial\n\n--- Page 6 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-6\nWAN Technologies (Cont.)\nBroadband Access\nSERVICE\nPROVIDER\nCable, DSL, Wireless WAN\nFrame-Relay\nSynchronous serial\nSERVICE\nPROVIDER\n\n--- Page 7 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-7\nNetwork Topologies: Bus Topology\nSEGMENT\nTerminator\nTerminator\n\n--- Page 8 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-8\nNetwork Topologies: Star Topology\nHub\n\n--- Page 9 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-9\nNetwork Topologies:\nExtended Star Topology\n\n--- Page 10 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-10\n7\n6\n5\n4\n3\n2\n1\nThe OSI Model—\nWhy a Layered Network Model?\n• Reduces complexity\n• Standardizes interfaces\n• Facilitates modular engineering\n• Ensures interoperable technology\n• Accelerates evolution\n• Simplifies teaching and learning\nApplication\nPresentation\nSession\nTransport\nNetwork\nData Link\nPhysical\n\n--- Page 11 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-11\nThe Seven Layers of the OSI Model\nApplication Layers (Upper \nLayers):\n• Network Processes to \nApplications\n• Data Representation\n• InterHost Communication\n7\n6\n5\n4\n3\n2\n1\nApplication\nPresentation\nSession\nTransport\nNetwork\nData Link\nPhysical\n\n--- Page 12 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-12\n7\n6\n5\n4\n3\n2\n1\nApplication\nPresentation\nSession\nTransport\nNetwork\nData Link\nPhysical\nThe Seven Layers of the OSI Model (Cont.)\nEnd To End Connections:\n• Handles transportation issues \nbetween hosts\n• Ensures data transport reliability\n• Establishes, maintains and \nterminates virtual circuits\n• Provides reliability through fault \ndetection and recovery\n• Information flow control\n\n--- Page 13 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-13\n7\n6\n5\n4\n3\n2\n1\nApplication\nPresentation\nSession\nTransport\nNetwork\nData Link\nPhysical\nThe Seven Layers of the OSI Model (Cont.)\nData Delivery:\n• Provides connectivity and path\nselection between two host \nsystems\n• Routes data packets\n• Selects best path to deliver data\n• The Network layer prioritizes data \nknown as Quality of Service (QoS)\n\n--- Page 14 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-14\n7\n6\n5\n4\n3\n2\n1\nApplication\nPresentation\nSession\nTransport\nNetwork\nData Link\nPhysical\nThe Seven Layers of the OSI Model (Cont.)\nAccess to Media:\n• Defines how data is formatted for \ntransmission and how access to \nthe network is controlled\n\n--- Page 15 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-15\n7\n6\n5\n4\n3\n2\n1\nApplication\nPresentation\nSession\nTransport\nNetwork\nData Link\nPhysical\nThe Seven Layers of the OSI Model (Cont.)\nBinary Transmission:\n• Defines the electrical, mechanical, \nprocedural, and functional \nspecifications for activating, \nmaintaining, and deactivating the \nphysical link\n\n--- Page 16 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-16\nTwisted-Pair\nCoaxial\nOuter jacket\nBNC \nConnector\nCopper Conductor\nBraided Copper Shielding\nPlastic Insulation\nFiber Optics\nOuter jacket\nPlastic Shield\nGlass and Fiber Cladding\nKevlar Reinforcing Material\nSC\nConnector\nOuter jacket\nTwisted-Pair\nColor-Coded Plastic Insulation\nRJ-45 \nConnector\nPhysical Media Types\n\n--- Page 17 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-17\nWireless\nPhysical Media Types (Cont.)\nINTERNET\nETHERNET BACKBONE\n\n--- Page 18 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-18\nPhysical Media Comparison\nTwisted Pair\nCoaxial\nFiber Optic\nWireless \nLAN\nBandwidth\nUp to 1 Gbps 10–100 Mbps\nUp to\n10 Gbps\nor higher\nUp to\n54 Mbps\nDistance\nUp to 100 m\nUp to 500 m\nUp to 60 km\nUp to 100 m\nPrice\nLeast \nexpensive\nInexpensive\nMost \nexpensive\nModerate\n\n--- Page 19 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-19\nHub or Repeater\n• A hub (concentrator) is a device that repeats the signals it \nreceives on one port to all other ports. It is a central \nconnection point for several network devices.\nHub\n\n--- Page 20 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-20\nHub (Multiport Repeater)\n\n--- Page 21 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-21\nNetwork Interface Card\n\n--- Page 22 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-22\nWAN—Physical Layer Implementations\n• Physical layer implementations vary\n• Cable specifications define speed of link\nCisco \nHDLC\nPPP\nFrame \nRelay\nISDN BRI (with \nPPP)\nDSL Modem\nCable \nModem\nEIA/TIA-232\nEIA/TIA-449\nX.21 V.24 V.35\nHSSI\nRJ-48\nNote: ISDN BRI cable \npinouts are different than \nthe pinouts for Ethernet.\nThe RJ-48 and RJ-45 \nlook the same, but the \npinouts are different.\nRJ-11\nNote: Works \nover telephone \nline\nBNC\nNote: Works \nover Cable \nTV line\n\n--- Page 23 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-23\nWAN\nPhysical Media\nWall Jack\n\n--- Page 24 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-24\nData Link Layer\n• Data Link layer protocols create, transmit, and receive \npackets. This layer is also responsible for logical MAC \naddressing and LLC processing, creating logical topologies, \nand controlling media access.\n2\nData Link\n\n--- Page 25 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-25\nMAC Address\n• The network interface card address, called the hardware \naddress, is protocol-independent and is usually assigned at \nthe factory. This address is technically called the media \naccess control address (MAC) because it is found on the \nMAC sub layer of the Data Link layer.\n2\nData Link\nMAC Address\nHardware Address\n=\n00-0C-F1-5E-BE-F2\n\n--- Page 26 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-26\nData Link Devices \n• The Data Link layer is manipulated by two devices: bridges \nand switches. These are more complex and more expensive \nthan their Physical layer counterparts, but they do have \nadvantages.\nSwitches\nBridges\n\n--- Page 27 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-27\nSwitch\n• When a switch receives data the switch examines the data \nlink header for the MAC address of the destination station \nand forwards it to the correct port. This opens a path \nbetween ports that can use the full bandwidth of the \ntopology.\n\n--- Page 28 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-28\nNetwork Layer\n• The network layer provides connectivity and path selection \nbetween two host systems that may be located on \ngeographically separated networks\n3\nNetwork\n\n--- Page 29 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-29\nNetwork Layer (Cont.)\n• IP is a standard that defines the manner in which the network \nlayers of two hosts interact. IP addresses are 32 bit long, \nhierarchical addressing scheme.\n3\nNetwork\nIP Address\nLogical Address\n=\n192.168.6.17\n\n--- Page 30 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-30\nNetwork Layer Devices \n• The devices that operate at the Network layer are routers and \nLayer 3 Switches\nRouter\nLayer 3 Switch\n\n--- Page 31 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-31\nRouters \n• Routers facilitate communication within this internet work. It \ndecides how to send packets within the network so that they \narrive at their destination.\n\n--- Page 32 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-32\nLayer 3 Switches \n• The Layer 3 switch functions at the Network layer and \nperforms the multiport, virtual LAN, data pipelining functions \nof a standard Layer 2 switch. It can also perform basic \nrouting functions between virtual LANs.\nLayer 3 Switch\n\n--- Page 33 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-33\nMultilayer Switching\n• Combines functionality of:\n– Layer 2 switching\n– Layer 3 switching\n– Layer 4 switching\n• High-speed scalability\n• Low latency compared to routers\n2\n1\nPhysical\n7\n6\n5\n4\nApplication\nPresentation\nSession\n3\nData Link\nTransport\nNetwork\n\n--- Page 34 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-34\nTransport Layer Implementations \n• The Transport layer is charge of the reliable/unreliable \ntransport of data. It can be implemented as TCP or UDP.\n4\nTCP\nUDP\nTransport\n\n--- Page 35 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-35\nGateway\n• A gateway is a combination of hardware and software that \nconnects dissimilar network environments. It performs \ntranslations at multiple layers of the open system \ninterconnection (OSI) model.\nPC Network\nMAC Network\nGateway\nOSI Model\n\n--- Page 36 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-36\nFirewalls\n• A firewall is a system or group of systems that manages \naccess between two or more networks\nOutside\nNetwork\nInside\nNetwork\nINTERNET\nDMZ \nNetwork\n\n--- Page 37 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-37\nSummary\nThis lesson covered the following main topics:\n• The function and operation of a hub, a switch, and a router\n• The function and operation of Layer 2 switching, Layer 3 \nswitching, and routing\n• The OSI model\n• Functionality of LAN, MAN and WAN networks\n• Possible media types for LAN and WAN connections\n• The function and definition of firewalls and gateways\n\n--- Page 38 ---\n© 2006 Cisco Systems, Inc. All rights reserved.\nSMBUF-38"
+      }
+    ],
+    "topic": null
+  },
+  {
+    "id": 6,
+    "title": "Introduction to Python Programming",
+    "messages": [
+      {
+        "role": "user",
+        "content": "what is python",
+        "pdfs": []
+      },
+      {
+        "role": "bot",
+        "content": "<p>Python is a high-level, interpreted programming language known for its readability, versatility, and focus on developer productivity. It supports multiple programming paradigms, including procedural, object-oriented, and functional programming, making it a popular choice for everything from web development to data science.</p>",
+        "msgId": "bot-1776676187964-3969"
+      },
+      {
+        "role": "user",
+        "content": "what is network",
+        "pdfs": []
+      },
+      {
+        "role": "bot",
+        "content": "<p>This chat is locked to the topic 'python'. I can only help with questions related to python. Please ask something about python.</p>",
+        "msgId": "bot-1776676194510-2152"
+      },
+      {
+        "role": "user",
+        "content": "explain about pandas library",
+        "pdfs": []
+      },
+      {
+        "role": "bot",
+        "content": "<p>Pandas is a powerful open-source library in Python used for data manipulation and analysis, providing high-performance data structures like DataFrames and Series. It is widely used for cleaning, transforming, and analyzing structured data efficiently.</p>\n<ol>\n<li>Data Structures</li>\n<li>The primary object is the DataFrame, which is a two-dimensional labeled data structure similar to a table or spreadsheet.</li>\n<li>The Series object represents a one-dimensional array capable of holding any data type.</li>\n<li>\n<p>Both structures support flexible indexing and alignment for complex data operations.</p>\n</li>\n<li>\n<p>Data Handling Capabilities</p>\n</li>\n<li>It allows for easy loading of data from various formats like CSV, Excel, SQL databases, and JSON.</li>\n<li>You can perform operations like filtering, sorting, merging, and pivoting data with minimal code.</li>\n<li>\n<p>It includes robust tools for handling missing data, such as dropping or filling null values.</p>\n</li>\n<li>\n<p>Analytical Functionality</p>\n</li>\n<li>It integrates seamlessly with other scientific libraries like NumPy, Matplotlib, and Scikit-learn.</li>\n<li>Built-in functions allow for rapid statistical analysis, including mean, median, standard deviation, and correlation calculations.</li>\n<li>The library is optimized for performance by using vectorized operations that process entire columns at once.</li>\n</ol>",
+        "msgId": "bot-1776676217041-4175"
+      },
+      {
+        "role": "user",
+        "content": "explain data visualization",
+        "pdfs": []
+      },
+      {
+        "role": "bot",
+        "content": "<p>In Python, data visualization is the practice of representing complex data sets through graphical charts and plots to identify patterns, trends, and outliers. It transforms raw numerical data into accessible visual formats using libraries like Matplotlib, Seaborn, and Plotly.</p>\n<ol>\n<li>Matplotlib</li>\n<li>It is the foundational library that provides low-level control over every element of a figure.</li>\n<li>Users can create static line plots, scatter plots, and histograms with fine-grained customization.</li>\n<li>\n<p>It serves as the primary engine for many other higher-level plotting libraries in the Python ecosystem.</p>\n</li>\n<li>\n<p>Seaborn</p>\n</li>\n<li>This library is built on top of Matplotlib and provides a high-level interface for drawing attractive statistical graphics.</li>\n<li>It includes built-in themes and color palettes that make charts more visually appealing by default.</li>\n<li>\n<p>It simplifies the creation of complex visualizations like heatmaps, violin plots, and multi-plot grids.</p>\n</li>\n<li>\n<p>Plotly</p>\n</li>\n<li>It is a versatile library used for creating interactive, web-ready visualizations.</li>\n<li>Charts created with Plotly allow users to zoom, hover, and toggle data series directly in a browser or notebook.</li>\n<li>It supports advanced features such as 3D charts, geographic maps, and financial dashboards.</li>\n</ol>",
+        "msgId": "bot-1776676229023-3611"
+      },
+      {
+        "role": "user",
+        "content": "what is next js",
+        "pdfs": []
+      },
+      {
+        "role": "bot",
+        "content": "<p>This chat is locked to the topic 'python'. I can only help with questions related to python. Please ask something about python.</p>",
+        "msgId": "bot-1776676238958-457"
+      },
+      {
+        "role": "user",
+        "content": "what about snowflake?",
+        "pdfs": []
+      },
+      {
+        "role": "bot",
+        "content": "<p>This chat is locked to the topic 'python'. I can only help with questions related to python. Please ask something about python.</p>",
+        "msgId": "bot-1776676255129-7568"
+      }
+    ],
+    "pdfs": [],
+    "topic": "python"
+  },
+  {
+    "id": 7,
+    "title": "Plant Classification Categories Explained",
+    "messages": [
+      {
+        "role": "user",
+        "content": "explain the category of fruits",
+        "pdfs": []
+      },
+      {
+        "role": "bot",
+        "content": "<p>Fruits are the mature ovaries of flowering plants that typically contain seeds and serve as a primary means of reproduction for the plant. From a botanical perspective, they represent the structure that develops from a flower after fertilization occurs.</p>\n<ol>\n<li>Botanical Classification</li>\n<li>Fleshy fruits contain a soft, pulpy pericarp at maturity.</li>\n<li>Dry fruits have a hardened or leathery outer layer when ripe.</li>\n<li>Simple fruits develop from a single ovary of one flower.</li>\n<li>\n<p>Aggregate fruits form from multiple ovaries within a single flower.</p>\n</li>\n<li>\n<p>Culinary Classification</p>\n</li>\n<li>Sweet or tart fruits are typically served as desserts or snacks.</li>\n<li>Savory fruits, often called vegetables in cooking, are used in main courses.</li>\n<li>Citrus fruits are characterized by their high acid content and thick rinds.</li>\n<li>\n<p>Melons are defined by their large size and high water content.</p>\n</li>\n<li>\n<p>Nutritional Importance</p>\n</li>\n<li>Fruits are essential sources of dietary fiber and various vitamins.</li>\n<li>They provide vital antioxidants that help protect cells from damage.</li>\n<li>Most fruits have a low fat and sodium content.</li>\n<li>They supply natural sugars that provide energy to the body.</li>\n</ol>"
+      }
+    ],
+    "pdfs": [],
+    "topic": null
+  }
+]
