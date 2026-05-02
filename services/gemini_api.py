@@ -10,8 +10,15 @@ load_dotenv()
 
 API_KEY = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel("gemini-3.1-flash-lite-preview")
+PRIMARY_MODEL = "models/gemma-3-1b-it"
+FALLBACK_MODEL = "gemini-1.5-flash"
 
+try:
+    model = genai.GenerativeModel(PRIMARY_MODEL)
+except Exception as e:
+    print("Primary model failed, using fallback:", e)
+    model = genai.GenerativeModel(FALLBACK_MODEL)
+    
 def call_gemini_api(message: str, conversation_history: list = None,
                     topic_lock: str = None) -> str:
     try:
