@@ -8,7 +8,9 @@ import re
 
 load_dotenv()
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+API_KEY = os.getenv("GEMINI_API_KEY")
+genai.configure(api_key=API_KEY)
+model = genai.GenerativeModel("gemini-3.1-flash-lite-preview")
 
 def call_gemini_api(message: str, conversation_history: list = None,
                     topic_lock: str = None) -> str:
@@ -396,11 +398,8 @@ def _call_with_retry(prompt: str, as_html: bool = True) -> str:
 
     for attempt in range(max_retries):
         try:
-            response = client.models.generate_content(
-               model = "gemini-3.1-flash-lite-preview",
-               contents=prompt
-    )
-            break
+           response = model.generate_content(prompt)
+           break
         except Exception as e:
             err = str(e)
             if ("503" in err or "429" in err) and attempt < max_retries - 1:
