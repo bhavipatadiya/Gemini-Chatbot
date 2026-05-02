@@ -16,7 +16,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/")
-@app.get("/view")
 async def home(request: Request):
     return templates.TemplateResponse(
         request,  

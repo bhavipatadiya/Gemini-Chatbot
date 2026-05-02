@@ -32,13 +32,11 @@
         <h3>Chats</h3>
         <button class="new-chat-btn" onclick="newChat()">+ New Chat</button>
         <input type="text" id="search-box" placeholder="Search chats..." onkeyup="searchChats()">
-        <div class="history-label" id="history-label">History</div>
-        <div class="sidebar-history-wrap" id="main-history-wrap">
-            <ul id="chat-history"></ul>
-        </div>
-        <div class="history-label" id="shared-history-label">Shared Chats</div>
-        <div class="sidebar-history-wrap shared-history-wrap" id="shared-history-wrap">
-            <ul id="shared-history"></ul>
+        <div class="sidebar-scroll-container" id="sidebar-scroll">
+            <div class="history-label" id="shared-history-label">Shared Chats</div>
+            <ul id="shared-history" class="sidebar-list"></ul>
+            <div class="history-label" id="history-label">History</div>
+            <ul id="chat-history" class="sidebar-list"></ul>
         </div>
         <button class="logout-btn" id="logout-btn">Logout</button>
     </div>
@@ -89,9 +87,26 @@
                         </div>
                     </div>
 
-                  
+                    <div id="share-modal-overlay" class="share-modal-overlay"
+                         onclick="closeShareModal(event)">
+                        <div class="share-modal" onclick="event.stopPropagation()">
+                            <div class="share-modal-header">
+                                <span class="share-modal-title">Share Chat Link</span>
+                                <button class="share-modal-close" onclick="closeShareModal()">✕</button>
+                            </div>
+                            <p class="share-modal-desc">
+                                Copy the link 
+                            </p>
+                            <div class="share-input-row">
+                                <input type="text" id="share-link-input" readonly>
+                                <button class="share-copy-btn" id="share-copy-btn" onclick="copyShareLink()">Copy Link</button>
+                            </div>
+                            <div id="share-copy-toast" class="share-copy-toast">Link copied!</div>
+                        </div>
+                    </div>
+
                     <button class="share-btn" id="share-btn"
-                            onclick="openShareModal()" title="Share this chat">
+                            onclick="toggleShare()" title="Toggle Share">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
                              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <circle cx="18" cy="5" r="3"/>
@@ -100,35 +115,8 @@
                             <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
                             <line x1="15.41" y1="6.51"  x2="8.59"  y2="10.49"/>
                         </svg>
-                        <span>Share</span>
+                        <span id="share-btn-text">Share</span>
                     </button>
-
-                    <div id="share-modal-overlay" class="share-modal-overlay"
-                         onclick="closeShareModal(event)">
-                        <div class="share-modal" onclick="event.stopPropagation()">
-                            <div class="share-modal-header">
-                                <span class="share-modal-title">🔗 Share Chat</span>
-                                <button class="share-modal-close" onclick="closeShareModal()">✕</button>
-                            </div>
-                            <p class="share-modal-desc">
-                                Copy the link below 
-                            </p>
-                            <div class="share-link-row">
-                                <input type="text" id="share-link-input" readonly
-                                       placeholder="Generating share link...">
-                                <button class="share-copy-btn" id="share-copy-btn"
-                                        onclick="copyShareLink()">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
-                                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
-                                    </svg>
-                                    Copy Link
-                                </button>
-                            </div>
-                            <div id="share-copy-toast" class="share-copy-toast">✓ Link copied!</div>
-                        </div>
-                    </div>
 
                     <div class="nav-dropdown-wrapper" id="viz-dropdown-wrapper">
                         <button class="nav-dropdown-btn" id="viz-dropdown-btn"
@@ -194,7 +182,7 @@
             <div id="upload-error-wrap"></div>
             <div id="selected-file" class="selected-files-container"></div>
 
-        
+            <div id="input-area-wrapper">
             <div class="input-area">
                 <div class="file-wrapper">
                     <button class="plus-btn" onclick="toggleFileMenu(event)">＋</button>
@@ -226,6 +214,9 @@
 
                 <button class="send-btn" onclick="sendMessage()">Send</button>
             </div>
+            </div>
+            
+            <button id="scrollBottomBtn" onclick="scrollToBottomSmooth()">↓</button>
         </div>
 
        

@@ -201,14 +201,16 @@ body.light-mode .history-label {
     color: rgba(0, 0, 0, 0.4);
 }
 
-.sidebar-history-wrap {
+.sidebar-scroll-container {
     flex: 1;
     overflow-y: auto;
     min-height: 0;
+    display: flex;
+    flex-direction: column;
 }
 
-.sidebar-history-wrap.shared-history-wrap {
-    flex: 0.8;
+.sidebar-list {
+    flex-shrink: 0;
 }
 
 #chat-history, #shared-history {
@@ -2032,7 +2034,7 @@ body.light-mode .share-modal-desc {
     cursor: wait;
 }
 
-/* "✓ Link copied!" toast */
+
 .share-copy-toast {
     font-size: 13px;
     font-weight: 600;
@@ -2098,3 +2100,491 @@ body.light-mode .share-modal-desc {
         flex-direction: column;
     }
 }
+.share-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.share-modal-overlay.show {
+    display: flex;
+}
+
+.share-modal {
+    background: var(--bg);
+    padding: 24px;
+    border-radius: 12px;
+    max-width: 450px;
+    width: 90%;
+    border: 1px solid var(--border);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    position: relative;
+}
+
+.share-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.share-modal-title {
+    font-size: 1.25rem;
+    font-weight: bold;
+    color: var(--text);
+}
+
+.share-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    color: var(--text);
+}
+
+.share-modal-desc {
+    font-size: 0.95rem;
+    color: rgba(255, 255, 255, 0.6);
+    margin-bottom: 20px;
+    line-height: 1.4;
+}
+
+.share-input-row {
+    display: flex;
+    gap: 8px;
+}
+
+.share-input-row input {
+    flex: 1;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: rgba(0,0,0,0.2);
+    color: var(--text);
+    font-size: 0.95rem;
+}
+
+.share-copy-btn {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 0 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 0.95rem;
+    white-space: nowrap;
+    transition: 0.2s;
+}
+
+.share-copy-btn:hover {
+    background: #2563eb;
+}
+
+.share-copy-toast {
+    position: absolute;
+    bottom: -40px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #10b981;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s, transform 0.3s;
+}
+
+.share-copy-toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-10px);
+}
+
+.table-container {
+    position: relative;
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card);
+    overflow: hidden;
+}
+
+.table-header {
+    display: flex;
+    justify-content: flex-end;
+    padding: 8px 12px;
+    background: var(--chat-header);
+    border-bottom: 1px solid var(--border);
+    position: relative;
+}
+
+.export-btn {
+    background: var(--user-msg);
+    color: #000;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    position: relative;
+    transition: opacity 0.2s;
+}
+
+.export-btn:hover {
+    opacity: 0.85;
+}
+
+
+.table-wrapper {
+    overflow-x: auto;
+    padding: 12px;
+}
+
+#scrollBottomBtn {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 90px;
+    width: 42px;
+    height: 42px;
+    background: rgba(25, 195, 125, 0.85); 
+    backdrop-filter: blur(4px);
+    color: #000;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 50%;
+    font-size: 20px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+#scrollBottomBtn:hover {
+    transform: translateX(-50%) scale(1.08);
+}
+
+#scrollBottomBtn.show {
+    display: flex;
+}
+
+.suggestions-container { display: none; }   
+
+
+.export-dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+    z-index: 100;
+    padding: 6px;
+    flex-direction: column;
+    min-width: 140px;
+    animation: dropdownIn 0.15s ease;
+}
+
+@keyframes dropdownIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.export-dropdown.show {
+    display: flex;
+}
+
+.export-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.16s;
+}
+
+.export-item:hover {
+    background: rgba(25, 195, 125, 0.15);
+}
+
+.export-item-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.export-item-icon svg {
+    width: 18px;
+    height: 18px;
+    stroke: var(--text);
+    opacity: 0.75;
+}
+
+.export-item:hover .export-item-icon svg {
+    stroke: #19c37d;
+    opacity: 1;
+}
+
+.export-item-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+}
+
+.export-item:hover .export-item-label {
+    color: #19c37d;
+}
+
+body.light-mode .export-dropdown {
+    background: #ffffff;
+    border-color: rgba(0,0,0,0.1);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+}
+
+body.light-mode .export-item:hover {
+    background: rgba(23, 184, 112, 0.1);
+}
+
+body.light-mode .export-item:hover .export-item-icon svg {
+    stroke: #17b870;
+}
+
+body.light-mode .export-item:hover .export-item-label {
+    color: #17b870;
+}
+
+.input-suggestions-box {
+    position: fixed;         
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+    z-index: 9999;             
+    animation: suggFadeIn 0.12s ease;
+}
+
+@keyframes suggFadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.input-suggestion-row {
+    width: 100%;
+    padding: 10px 16px;
+    font-size: 16px;        
+    font-family: var(--font);
+    color: var(--text);
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    text-align: left;
+    line-height: 1.5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+    transition: background 0.13s, padding-left 0.13s;
+    opacity: 0.85;
+}
+
+.input-suggestion-row:last-child {
+    border-bottom: none;
+}
+
+.input-suggestion-row:hover {
+    background: rgba(25, 195, 125, 0.1);
+    padding-left: 22px;
+    opacity: 1;
+}
+
+body.light-mode .input-suggestions-box {
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.1);
+}
+
+body.light-mode .input-suggestion-row:hover {
+    background: rgba(23, 184, 112, 0.08);
+}
+
+.isg-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 14px;
+    font-size: 16px;        
+    font-family: var(--font);
+    color: var(--text);
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    text-align: left;
+    line-height: 1.5;
+    white-space: nowrap;
+    overflow: hidden;
+    box-sizing: border-box;
+    transition: background 0.13s, padding-left 0.13s;
+    opacity: 0.88;
+}
+
+.isg-row:last-child {
+    border-bottom: none;
+}
+
+.isg-row:hover,
+.isg-row.active {
+    background: rgba(25, 195, 125, 0.1);
+    padding-left: 18px;
+    opacity: 1;
+}
+
+body.light-mode .isg-row:hover,
+body.light-mode .isg-row.active {
+    background: rgba(23, 184, 112, 0.08);
+}
+
+.isg-ic {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    opacity: 0.45;
+    stroke: var(--text);
+}
+
+.isg-txt {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 16px;
+    font-family: var(--font);
+}
+
+.isg-txt strong {
+    font-weight: 700;
+    color: var(--user-msg);
+}
+
+.isg-enter {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    opacity: 0;
+    stroke: var(--text);
+    transition: opacity 0.13s;
+}
+
+.isg-row:hover .isg-enter,
+.isg-row.active .isg-enter {
+    opacity: 0.4;
+}
+
+.static-suggestions-box {
+    padding: 0 22px 6px;
+    flex-shrink: 0;
+    background: var(--bg);
+}
+
+.static-sugg-row {
+    width: 100%;
+    padding: 12px 16px;
+    font-size: 15px;
+    font-family: var(--font);
+    color: var(--text);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    text-align: left;
+    line-height: 1.5;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    white-space: normal;
+    word-wrap: break-word;
+}
+
+.static-sugg-row:last-child {
+    margin-bottom: 0;
+}
+
+.static-sugg-row:hover {
+    background: rgba(25, 195, 125, 0.08);
+    border-color: rgba(25, 195, 125, 0.3);
+    transform: translateX(2px);
+}
+
+body.light-mode .static-sugg-row:hover {
+    background: rgba(23, 184, 112, 0.06);
+    border-color: rgba(23, 184, 112, 0.3);
+}
+
+.continue-suggestions {
+    padding: 6px 22px 4px;
+    flex-shrink: 0;
+}
+
+.ncs-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.ncs-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 14px;
+    font-family: var(--font);
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ncs-chip svg {
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
+    opacity: 0.5;
+    stroke: var(--text);
+}
+
+.ncs-chip:hover {
+    background: rgba(25, 195, 125, 0.12);
+    border-color: rgba(25, 195, 125, 0.4);
+    color: var(--user-msg);
+}
+
+.ncs-chip:hover svg {
+    opacity: 0.8;
+    stroke: var(--user-msg);
+}
+
+body.light-mode .ncs-chip:hover {
+    background: rgba(23, 184, 112, 0.1);
+    border-color: rgba(23, 184, 112, 0.4);
+}
+

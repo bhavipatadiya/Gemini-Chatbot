@@ -10,17 +10,17 @@ load_dotenv()
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-
 def call_gemini_api(message: str, conversation_history: list = None,
                     topic_lock: str = None) -> str:
     try:
-        
         context_block = ""
         if conversation_history:
             lines = []
             for turn in conversation_history[-10:]:
                 role    = "User" if turn["role"] == "user" else "Assistant"
                 content = _strip_html(turn.get("content", "")).strip()
+                if "This chat is locked to the topic" in content:
+                    continue
                 if content:
                     lines.append(f"{role}: {content}")
             if lines:
@@ -29,7 +29,7 @@ def call_gemini_api(message: str, conversation_history: list = None,
                     + "\n".join(lines)
                     + "\n\n"
                 )
-
+                
         topic_block = ""
         if topic_lock:
             topic_block = f"""## ⚠ TOPIC LOCK — HIGHEST PRIORITY INSTRUCTION:
@@ -53,9 +53,7 @@ You MUST follow these rules without exception:
 {topic_block}{context_block}## Current Question:
 {message}
 
-═══════════════════════════════════════════════════════
 STRICT RESPONSE RULES — follow exactly:
-═══════════════════════════════════════════════════════
 
 1. CONTEXT AWARENESS:
    - Always read the conversation history before answering.
@@ -399,9 +397,9 @@ def _call_with_retry(prompt: str, as_html: bool = True) -> str:
     for attempt in range(max_retries):
         try:
             response = client.models.generate_content(
-                model="gemini-3.1-flash-lite-preview",
-                contents=prompt
-            )
+               model = "gemini-3.1-flash-lite-preview",
+               contents=prompt
+    )
             break
         except Exception as e:
             err = str(e)
