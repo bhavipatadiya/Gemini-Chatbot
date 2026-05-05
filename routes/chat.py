@@ -21,6 +21,9 @@ BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR   = os.path.join(BASE_DIR, "data")
 SHARE_PATH = os.path.join(BASE_DIR, "data", "shared_chats.json")
 
+# Ensure data directory exists on startup (important for Render cold starts)
+os.makedirs(DATA_DIR, exist_ok=True)
+
 CURRENT_PDF_TEXT = ""
 
 # ── Auth0 settings ────────────────────────────────────────────

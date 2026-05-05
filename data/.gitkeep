@@ -1,0 +1,2 @@
+# This file ensures the data/ folder exists in Git
+# All chat JSON files are gitignored and created at runtime
