@@ -47,8 +47,14 @@ async function _apiFetch(url, options = {}) {
     if (isSharedView || !auth0Client) return fetch(url, options);
     try {
         const token = await auth0Client.getTokenSilently();
-        options.headers = { ...options.headers, "Authorization": `Bearer ${token}` };
-    } catch(e) {}
+        if (token) {
+            options.headers = { ...options.headers, "Authorization": `Bearer ${token}` };
+        } else {
+            console.warn("No token obtained from Auth0");
+        }
+    } catch(e) {
+        console.error("Failed to get Auth0 token:", e);
+    }
     return fetch(url, options);
 }
 

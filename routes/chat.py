@@ -412,6 +412,13 @@ async def generate_title(request: Request):
     except Exception:
         return {"title": "New Chat"}
 
+
+@router.get("/me")
+async def get_me(request: Request):
+    """Debug endpoint — returns the resolved user_id so you can verify isolation."""
+    uid = _get_user_id(request)
+    return {"user_id": uid, "is_anonymous": uid == "anonymous"}
+
 @router.post("/suggest")
 async def suggest(request: Request):
     """
