@@ -35,11 +35,12 @@ async function initAuth() {
 
     const ok = await auth0Client.isAuthenticated();
     if (ok) {
+        // Already logged in — go straight to app
         showApp();
     } else {
-        await auth0Client.loginWithRedirect({
-            authorizationParams: { redirect_uri: AUTH0_REDIRECT }
-        });
+        // Not logged in — show YOUR login screen first
+        // User must click the Login button to proceed to Auth0
+        showLoginScreen();
     }
 }
 
