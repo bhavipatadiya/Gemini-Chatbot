@@ -47,13 +47,17 @@ async function _apiFetch(url, options = {}) {
     if (isSharedView || !auth0Client) return fetch(url, options);
     try {
         const token = await auth0Client.getTokenSilently();
-        if (token) {
-            options.headers = { ...options.headers, "Authorization": `Bearer ${token}` };
-        } else {
-            console.warn("No token obtained from Auth0");
-        }
+        const user  = await auth0Client.getUser();
+        const uid   = user?.sub || "";
+        options.headers = {
+            ...options.headers,
+            "Authorization": `Bearer ${token}`,
+            "x-user-id": uid
+        };
+        // Cache user id for local use
+        if (uid) _currentUserId = uid;
     } catch(e) {
-        console.error("Failed to get Auth0 token:", e);
+        console.error("Auth0 token/user fetch failed:", e);
     }
     return fetch(url, options);
 }

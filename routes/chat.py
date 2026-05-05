@@ -102,9 +102,17 @@ def _user_file(user_id: str) -> str:
 
 def _get_user_id(request: Request) -> str:
     """
-    Extract user identity from the Authorization header (Auth0 JWT sub claim).
-    Falls back to X-User-Id header, then 'anonymous'.
+    Extract user identity in priority order:
+    1. x-user-id header (Auth0 sub sent directly by frontend — most reliable)
+    2. Authorization Bearer JWT decode (fallback)
+    3. 'anonymous' (last resort)
     """
+    # Priority 1: direct user id header sent by frontend
+    uid = request.headers.get("x-user-id", "").strip()
+    if uid:
+        return uid
+
+    # Priority 2: decode JWT from Authorization header
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         token = auth[7:].strip()
@@ -112,10 +120,6 @@ def _get_user_id(request: Request) -> str:
             uid = _decode_jwt_sub(token)
             if uid:
                 return uid
-
-    uid = request.headers.get("X-User-Id", "").strip()
-    if uid:
-        return uid
 
     return "anonymous"
 
