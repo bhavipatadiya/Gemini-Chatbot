@@ -12,34 +12,36 @@ async function initAuth() {
     const match = window.location.pathname.match(/^\/shared\/([^\/]+)/);
     if (match) { sharedToken = match[1]; isSharedView = true; showApp(); return; }
 
-    auth0Client = await auth0.createAuth0Client({
-        domain: AUTH0_DOMAIN,
-        clientId: AUTH0_CLIENT_ID,
-        authorizationParams: { redirect_uri: AUTH0_REDIRECT },
-        cacheLocation: "localstorage",
-        useRefreshTokens: true
-    });
+    try {
+        auth0Client = await auth0.createAuth0Client({
+            domain: AUTH0_DOMAIN,
+            clientId: AUTH0_CLIENT_ID,
+            authorizationParams: { redirect_uri: AUTH0_REDIRECT },
+            cacheLocation: "localstorage",
+            useRefreshTokens: true
+        });
 
-    // Handle Auth0 redirect callback (code + state in URL)
-    if (window.location.pathname === "/callback" &&
-        window.location.search.includes("code=") &&
-        window.location.search.includes("state=")) {
-        try {
-            await auth0Client.handleRedirectCallback();
-        } catch(e) {
-            console.warn("Callback error:", e);
+        // Handle Auth0 redirect callback — runs when Auth0 sends user back with code+state
+        if (window.location.pathname === "/callback" &&
+            window.location.search.includes("code=") &&
+            window.location.search.includes("state=")) {
+            try {
+                await auth0Client.handleRedirectCallback();
+            } catch(e) {
+                console.warn("Callback error:", e);
+            }
+            window.history.replaceState({}, document.title, "/");
         }
-        // Clean URL and go to root
-        window.history.replaceState({}, document.title, "/");
-    }
 
-    const ok = await auth0Client.isAuthenticated();
-    if (ok) {
-        // Already logged in — go straight to app
-        showApp();
-    } else {
-        // Not logged in — show YOUR login screen first
-        // User must click the Login button to proceed to Auth0
+        const ok = await auth0Client.isAuthenticated();
+        if (ok) {
+            showApp();   // already logged in → go to chatbot
+        } else {
+            showLoginScreen();  // not logged in → show login screen
+        }
+    } catch(e) {
+        // If Auth0 SDK fails to load, still show the login screen
+        console.error("Auth0 init error:", e);
         showLoginScreen();
     }
 }
@@ -55,7 +57,6 @@ async function _apiFetch(url, options = {}) {
             "Authorization": `Bearer ${token}`,
             "x-user-id": uid
         };
-        // Cache user id for local use
         if (uid) _currentUserId = uid;
     } catch(e) {
         console.error("Auth0 token/user fetch failed:", e);
@@ -75,6 +76,11 @@ function showApp() {
 
 document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("login-btn").addEventListener("click", async () => {
+        if (!auth0Client) {
+            // Re-init if auth0Client failed earlier
+            await initAuth();
+            return;
+        }
         await auth0Client.loginWithRedirect({ authorizationParams: { redirect_uri: AUTH0_REDIRECT } });
     });
     document.getElementById("logout-btn").addEventListener("click", async () => {
@@ -281,8 +287,13 @@ function _showPanel(list) {
         btn.addEventListener("mousedown", e => {
             e.preventDefault();
             const ta = document.getElementById("user-input");
-            if (ta) { ta.value = text; autoResize(ta); ta.focus(); }
+            if (ta) {
+                ta.value = text;
+                autoResize(ta);
+            }
             _hidePanel();
+            // Auto-send the suggestion as a message immediately
+            sendMessage();
         });
         panel.appendChild(btn);
     });
@@ -299,15 +310,34 @@ function _hidePanel() {
 
 function _esc(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
-// ── New-chat suggestions: fetch fresh each time newChat() is called ──
+// ── New-chat suggestions: show 3 defaults immediately, then replace with
+//    personalised ones from the API in the background ──────────────────
+const _DEFAULT_SUGGESTIONS = [
+    "What can you help me with today?",
+    "How do I get started with coding?",
+    "Can you explain a complex topic simply?",
+    "What are the best practices for software architecture?",
+    "Help me brainstorm some new ideas.",
+    "Explain the difference between AI and machine learning.",
+    "What is the best way to learn a new programming language?",
+    "What are some productivity tips for developers?",
+    "How does the internet actually work?",
+    "Can you summarize a topic for me?",
+];
+
 async function _prefetchNewChat() {
     if (_S.ncFetching) return;
-    if (_S.ncReady && _S.ncList.length) {
+
+    // Show 3 random defaults IMMEDIATELY — no waiting for API
+    if (!_S.ncReady) {
+        const shuffled = [..._DEFAULT_SUGGESTIONS].sort(() => Math.random() - 0.5);
+        _S.ncList  = shuffled.slice(0, 3);
+        _S.ncReady = true;
         const ta = document.getElementById("user-input");
-        if (ta && document.activeElement === ta && !ta.value.trim() && _S.mode === "new")
-            _showPanel(_S.ncList);
-        return;
+        if (ta && !ta.value.trim() && _S.mode === "new") _showPanel(_S.ncList);
     }
+
+    // Then fetch personalised suggestions from API in background
     _S.ncFetching = true;
     try {
         const r = await _apiFetch("/suggest", {
@@ -318,13 +348,12 @@ async function _prefetchNewChat() {
         if (!r.ok) throw new Error();
         const d    = await r.json();
         const list = Array.isArray(d.suggestions) ? d.suggestions.slice(0,3) : [];
-        if (!list.length) return;
-        _S.ncList  = list;
-        _S.ncReady = true;
-        const ta = document.getElementById("user-input");
-        if (ta && document.activeElement === ta && !ta.value.trim() && _S.mode === "new")
-            _showPanel(list);
-    } catch(e) {}
+        if (list.length) {
+            _S.ncList = list;  // replace defaults with personalised
+            const ta = document.getElementById("user-input");
+            if (ta && !ta.value.trim() && _S.mode === "new") _showPanel(list);
+        }
+    } catch(e) { /* keep defaults */ }
     finally { _S.ncFetching = false; }
 }
 
@@ -359,14 +388,15 @@ async function _fetchSugg(query) {
     } catch(e) { /* AbortError — silent */ }
 }
 
-// ── Continue-chat: use last 3–5 messages as context ──────────────
+// ── Continue-chat: use last 3–5 messages of THIS chat as context ──
+//    ccList is cleared after every bot reply so suggestions stay fresh
 async function _loadContinueChips() {
     if (_S.ccList.length) {
         const ta = document.getElementById("user-input");
         if (ta && !ta.value.trim()) _showPanel(_S.ccList);
         return;
     }
-    // Build context from last 3–5 messages (skip PDF-only messages)
+    // Build context from last 3–5 messages of the current chat
     const recent = currentChat
         .filter(m => m.content && m.content !== "[PDF uploaded]")
         .slice(-5)
@@ -384,7 +414,7 @@ async function _loadContinueChips() {
         const d    = await r.json();
         const list = Array.isArray(d.suggestions) ? d.suggestions.slice(0,3) : [];
         if (!list.length) return;
-        _S.ccList = list;
+        _S.ccList = list;  // cached for this chat — cleared on next bot reply
         const ta  = document.getElementById("user-input");
         if (ta && !ta.value.trim()) _showPanel(list);
     } catch(e) {}

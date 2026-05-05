@@ -1,4 +1,3 @@
-import base64
 import json
 import os
 import re as _re
@@ -19,109 +18,27 @@ templates = Jinja2Templates(directory="templates")
 
 BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR   = os.path.join(BASE_DIR, "data")
-SHARE_PATH = os.path.join(BASE_DIR, "data", "shared_chats.json")
 
 # Ensure data directory exists on startup (important for Render cold starts)
 os.makedirs(DATA_DIR, exist_ok=True)
 
 CURRENT_PDF_TEXT = ""
 
-# ── Auth0 settings ────────────────────────────────────────────
-AUTH0_DOMAIN   = "dev-c3urwbeyfq7ld873.us.auth0.com"
-AUTH0_AUDIENCE = None          # set if you added an API audience in Auth0 dashboard
-_JWKS_CACHE    = None          # fetched once per process, reused on every request
-
-
-def _get_jwks() -> dict:
-    """Fetch and cache Auth0 JWKS (public keys) for JWT verification."""
-    global _JWKS_CACHE
-    if _JWKS_CACHE is not None:
-        return _JWKS_CACHE
-    try:
-        import requests as _req
-        resp = _req.get(
-            f"https://{AUTH0_DOMAIN}/.well-known/jwks.json", timeout=5
-        )
-        resp.raise_for_status()
-        _JWKS_CACHE = resp.json()
-    except Exception:
-        _JWKS_CACHE = {"keys": []}
-    return _JWKS_CACHE
-
-
-def _decode_jwt_sub(token: str) -> str:
-    """
-    Return the Auth0 'sub' claim from a JWT.
-    Tries verified RS256 decode first (python-jose + JWKS).
-    Falls back to unverified base64 decode so the app still works
-    if JWKS is temporarily unavailable.
-    """
-    # ── Attempt 1: verified decode via python-jose ──────────────
-    try:
-        from jose import jwt as _jwt, jwk as _jwk
-        jwks   = _get_jwks()
-        header = _jwt.get_unverified_header(token)
-        kid    = header.get("kid")
-        key    = None
-        for k in jwks.get("keys", []):
-            if k.get("kid") == kid:
-                key = _jwk.construct(k)
-                break
-        if key:
-            options = {"verify_exp": True, "verify_aud": bool(AUTH0_AUDIENCE)}
-            kwargs  = {"algorithms": ["RS256"], "options": options}
-            if AUTH0_AUDIENCE:
-                kwargs["audience"] = AUTH0_AUDIENCE
-            payload = _jwt.decode(token, key, **kwargs)
-            sub = payload.get("sub") or payload.get("email") or ""
-            if sub:
-                return sub
-    except Exception:
-        pass
-
-    # ── Attempt 2: unverified base64 decode (fallback) ──────────
-    try:
-        parts = token.split(".")
-        if len(parts) == 3:
-            padded  = parts[1] + "=" * (-len(parts[1]) % 4)
-            payload = json.loads(base64.urlsafe_b64decode(padded))
-            sub = payload.get("sub") or payload.get("email") or ""
-            if sub:
-                return sub
-    except Exception:
-        pass
-
-    return ""
-
 
 def _user_file(user_id: str) -> str:
-    """Each user gets their own chats JSON file."""
+    """Each user gets their own chats JSON file: data/chats_{user_id}.json"""
     safe = _re.sub(r"[^a-zA-Z0-9_\-]", "_", user_id)
     return os.path.join(DATA_DIR, f"chats_{safe}.json")
 
 
 def _get_user_id(request: Request) -> str:
     """
-    Extract user identity in priority order:
-    1. x-user-id header (Auth0 sub sent directly by frontend — most reliable)
-    2. Authorization Bearer JWT decode (fallback)
-    3. 'anonymous' (last resort)
+    Get the logged-in user's ID from the x-user-id header.
+    The frontend sends this directly from Auth0's user.sub field.
+    Falls back to 'anonymous' if not present (e.g. shared chat views).
     """
-    # Priority 1: direct user id header sent by frontend
     uid = request.headers.get("x-user-id", "").strip()
-    if uid:
-        return uid
-
-    # Priority 2: decode JWT from Authorization header
-    auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        token = auth[7:].strip()
-        if token:
-            uid = _decode_jwt_sub(token)
-            if uid:
-                return uid
-
-    return "anonymous"
+    return uid if uid else "anonymous"
 
 def load_chats(user_id: str = "anonymous"):
     path = _user_file(user_id)
