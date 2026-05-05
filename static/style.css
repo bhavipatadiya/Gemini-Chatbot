@@ -112,13 +112,11 @@ body.light-mode .auth-card p {
     transform: scale(0.97);
 }
 
-
 .app {
     display: flex;
     height: 100vh;
     overflow: hidden;
 }
-
 
 .sidebar {
     width: 270px;
@@ -375,7 +373,6 @@ body.light-mode .menu div:hover {
     background: #666;
     color: #fff;
 }
-
 
 .chat-container {
     flex: 1;
@@ -754,7 +751,6 @@ body.light-mode .pinned-empty {
     position: relative;
 }
 
-
 .msg-edit-btn {
     background: transparent;
     border: none;
@@ -791,7 +787,6 @@ body.light-mode .msg-edit-btn:hover {
     height: 15px;
     display: block;
 }
-
 
 .msg-user-wrap.editing {
     flex-direction: column;
@@ -865,7 +860,6 @@ body.light-mode .msg-edit-btn:hover {
 body.light-mode .msg-edit-cancel:hover {
     background: rgba(0, 0, 0, 0.06);
 }
-
 
 .msg-viz-section {
     margin-top: 16px;

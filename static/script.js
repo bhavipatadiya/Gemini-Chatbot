@@ -1,22 +1,55 @@
+// ═══════════════════════════════════════════════════════════════
+//  AUTH  (Auth0)
+// ═══════════════════════════════════════════════════════════════
 const AUTH0_DOMAIN    = "dev-c3urwbeyfq7ld873.us.auth0.com";
 const AUTH0_CLIENT_ID = "nvQtTELKBfNnZRiVavXhrhU50lCnizrT";
-const AUTH0_REDIRECT  = window.location.origin;
+const AUTH0_REDIRECT  = window.location.origin + "/callback";
 let auth0Client = null, isSharedView = false, sharedToken = null;
+let _currentUserId = null;
 
 async function initAuth() {
+    // Shared chat view — skip auth entirely
     const match = window.location.pathname.match(/^\/shared\/([^\/]+)/);
     if (match) { sharedToken = match[1]; isSharedView = true; showApp(); return; }
+
     auth0Client = await auth0.createAuth0Client({
-        domain: AUTH0_DOMAIN, clientId: AUTH0_CLIENT_ID,
+        domain: AUTH0_DOMAIN,
+        clientId: AUTH0_CLIENT_ID,
         authorizationParams: { redirect_uri: AUTH0_REDIRECT },
-        cacheLocation: "localstorage", useRefreshTokens: true
+        cacheLocation: "localstorage",
+        useRefreshTokens: true
     });
-    if (window.location.search.includes("code=") && window.location.search.includes("state=")) {
-        try { await auth0Client.handleRedirectCallback(); } catch(e) {}
-        window.history.replaceState({}, document.title, window.location.pathname);
+
+    // Handle Auth0 redirect callback (code + state in URL)
+    if (window.location.pathname === "/callback" &&
+        window.location.search.includes("code=") &&
+        window.location.search.includes("state=")) {
+        try {
+            await auth0Client.handleRedirectCallback();
+        } catch(e) {
+            console.warn("Callback error:", e);
+        }
+        // Clean URL and go to root
+        window.history.replaceState({}, document.title, "/");
     }
+
     const ok = await auth0Client.isAuthenticated();
-    if (ok) showApp(); else showLoginScreen();
+    if (ok) {
+        showApp();
+    } else {
+        await auth0Client.loginWithRedirect({
+            authorizationParams: { redirect_uri: AUTH0_REDIRECT }
+        });
+    }
+}
+
+async function _apiFetch(url, options = {}) {
+    if (isSharedView || !auth0Client) return fetch(url, options);
+    try {
+        const token = await auth0Client.getTokenSilently();
+        options.headers = { ...options.headers, "Authorization": `Bearer ${token}` };
+    } catch(e) {}
+    return fetch(url, options);
 }
 
 function showLoginScreen() {
@@ -35,137 +68,210 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     document.getElementById("logout-btn").addEventListener("click", async () => {
         clearPDFStore();
-        await auth0Client.logout({ logoutParams: { returnTo: AUTH0_REDIRECT } });
+        await auth0Client.logout({ logoutParams: { returnTo: window.location.origin } });
     });
 });
 
+// ═══════════════════════════════════════════════════════════════
+//  PDF STORE
+// ═══════════════════════════════════════════════════════════════
 const PDF_STORE_KEY = "pdfBinStore";
-
 function savePDFToStore(name, b64) {
     try {
         let store = getPDFStore().filter(p => p.name !== name);
         store.push({ name, b64 });
         if (store.length > 10) store = store.slice(-10);
         localStorage.setItem(PDF_STORE_KEY, JSON.stringify(store));
-    } catch(e) { console.warn("PDF store:", e); }
+    } catch(e) {}
 }
 function getPDFStore() {
     try { return JSON.parse(localStorage.getItem(PDF_STORE_KEY) || "[]"); } catch { return []; }
 }
 function getBlobUrl(name) {
     try {
-        const e = getPDFStore().find(p => p.name === name);
-        if (!e) return null;
+        const e = getPDFStore().find(p => p.name === name); if (!e) return null;
         const b = atob(e.b64), a = new Uint8Array(b.length);
         for (let i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
-        return URL.createObjectURL(new Blob([a], { type: "application/pdf" }));
+        return URL.createObjectURL(new Blob([a], { type:"application/pdf" }));
     } catch { return null; }
 }
 function clearPDFStore() { localStorage.removeItem(PDF_STORE_KEY); }
 function resolveUrl(name, live) { return live || getBlobUrl(name); }
 
+// ═══════════════════════════════════════════════════════════════
+//  CHART CONFIG
+// ═══════════════════════════════════════════════════════════════
 const CHART_COLORS = ["#19c37d","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#f97316","#84cc16","#ec4899","#14b8a6","#a78bfa","#fb923c"];
 const CHART_NAMES  = { bar:"Bar Chart", line:"Line Chart", pie:"Pie Chart", doughnut:"Doughnut Chart", radar:"Radar Chart" };
 const chartRegistry = {};
 
+// ═══════════════════════════════════════════════════════════════
+//  APP STATE
+// ═══════════════════════════════════════════════════════════════
 let chats = [], currentChat = [], currentTitle = null, currentChatId = null;
 let currentChatPDFs = [], pendingPDFs = [], currentTopic = null;
 
+// ═══════════════════════════════════════════════════════════════
+//  SUGGESTION ENGINE
+//  ─────────────────────────────────────────────────────────────
+//  RULES to minimize API calls (target: max 2-3 per interaction):
+//
+//  1. NEW CHAT focus     → 1 call total (pre-fetched once, reused)
+//  2. TYPING             → 1 call per word (150ms debounce, abort stale)
+//                          cache hit = 0 calls
+//  3. CONTINUE CHAT      → 1 call (after bot reply, result cached in _S.ccList)
+//                          focus reuses ccList = 0 calls
+//
+//  The panel is positioned ABSOLUTE inside .textarea-wrapper,
+//  shown ABOVE the textarea with z-index.
+// ═══════════════════════════════════════════════════════════════
+
 const _S = {
-    debounce: null, abort: null, lastQuery: null,
-    cache: JSON.parse(sessionStorage.getItem("sg_cache") || "{}"),
-    ncReady: false, ncList: [], ncFetching: false,
-    chatCtx: "",
-    ccList: [],
-    mode: "new"
+    debounce:   null,
+    abort:      null,
+    lastQuery:  null,
+    // session-level cache: persists across focus events
+    cache:      {},
+
+    ncReady:    false,  // new-chat pre-fetch done
+    ncList:     [],     // new-chat suggestions (reused, 0 extra calls on re-focus)
+    ncFetching: false,
+
+    chatCtx:    "",     // first-user-message context
+    ccList:     [],     // continue-chat suggestions (reused on re-focus)
+
+    mode:       "new",  // "new" | "chat"
 };
 
-function _updateCache(q, list) {
-    _S.cache[q] = list;
-    try { sessionStorage.setItem("sg_cache", JSON.stringify(_S.cache)); } catch(e){}
-}
-
-(function _injectSuggCSS() {
+// ── CSS (injected once) ────────────────────────────────────────
+(function _injectCSS() {
     if (document.getElementById("_sg_style")) return;
     const s = document.createElement("style"); s.id = "_sg_style";
     s.textContent = `
+    /* wrapper must be position:relative for panel to anchor */
+    .textarea-wrapper { position: relative !important; }
+
     #sg-panel {
-        position: absolute; bottom: 100%; left: 0;
-        width: 100%; background: var(--input-bg,#40414f);
-        border: 1px solid var(--user-msg,#19c37d); border-bottom: none;
-        border-radius: 10px 10px 0 0; overflow: hidden;
-        display: none; z-index: 100;
-        box-shadow: 0 -4px 10px rgba(0,0,0,0.1);
+        position: absolute;
+        bottom: 100%;
+        left: 0;
+        right: 0;
+        background: var(--input-bg, #40414f);
+        border: 1px solid var(--user-msg, #19c37d);
+        border-bottom: none;
+        border-radius: 10px 10px 0 0;
+        overflow: hidden;
+        display: none;
+        z-index: 9999;
+        box-shadow: 0 -4px 16px rgba(0,0,0,0.25);
     }
-    #sg-panel.sg-visible { display:block; }
+    #sg-panel.sg-visible { display: block; }
+
+    /* When panel visible, remove top radius from textarea */
+    #sg-panel.sg-visible ~ textarea,
+    .textarea-wrapper:has(#sg-panel.sg-visible) textarea {
+        border-top-left-radius:  0 !important;
+        border-top-right-radius: 0 !important;
+    }
+
     .sg-row {
-        display:flex; align-items:center; gap:10px;
-        padding:11px 18px;
-        font-size:16px; font-family:var(--font,Calibri,sans-serif);
-        color:rgba(255,255,255,0.82); background:transparent;
-        border:none; border-bottom:1px solid var(--border,rgba(255,255,255,0.08));
-        width:100%; text-align:left; cursor:pointer;
-        white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-        transition:background .12s,color .12s,padding-left .1s;
-        line-height:1.45; box-sizing:border-box;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 11px 18px;
+        font-size: 16px;
+        font-family: var(--font, Calibri, sans-serif);
+        color: rgba(255,255,255,0.82);
+        background: transparent;
+        border: none;
+        border-bottom: 1px solid var(--border, rgba(255,255,255,0.08));
+        width: 100%;
+        text-align: left;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        transition: background .12s, color .12s, padding-left .1s;
+        line-height: 1.45;
+        box-sizing: border-box;
     }
-    .sg-row:last-child { border-bottom:none; }
-    .sg-row:hover,.sg-row.sg-active {
-        background:rgba(25,195,125,.12); color:#fff; padding-left:22px;
+    .sg-row:last-child { border-bottom: none; }
+    .sg-row:hover, .sg-row.sg-active {
+        background: rgba(25,195,125,.12);
+        color: #fff;
+        padding-left: 24px;
     }
-    .sg-row svg { flex-shrink:0; width:14px; height:14px; opacity:.38; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
-    .sg-row .sg-txt { flex:1; overflow:hidden; text-overflow:ellipsis; font-size:16px; }
+    .sg-row svg.sg-ic {
+        flex-shrink: 0; width:14px; height:14px; opacity:.38;
+        stroke: currentColor; fill: none;
+        stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
+    }
+    .sg-row .sg-txt {
+        flex:1; overflow:hidden; text-overflow:ellipsis; font-size:16px;
+    }
     .sg-row .sg-txt strong { font-weight:700; color:var(--user-msg,#19c37d); }
-    .sg-row .sg-arr { opacity:0; width:13px; height:13px; flex-shrink:0; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; transition:opacity .12s; }
-    .sg-row:hover .sg-arr,.sg-row.sg-active .sg-arr { opacity:.38; }
-    #sg-panel.sg-visible + #input-area-wrapper textarea {
-        border-top-left-radius:0!important; border-top-right-radius:0!important;
+    .sg-row svg.sg-arr {
+        opacity:0; width:13px; height:13px; flex-shrink:0;
+        stroke:currentColor; fill:none;
+        stroke-width:2; stroke-linecap:round; stroke-linejoin:round;
+        transition: opacity .12s;
     }
+    .sg-row:hover .sg-arr, .sg-row.sg-active .sg-arr { opacity:.38; }
+
     body.light-mode #sg-panel { background:#f4f6fa; border-color:rgba(23,184,112,.55); }
-    body.light-mode .sg-row { color:rgba(0,0,0,.62); border-bottom-color:rgba(0,0,0,.07); }
-    body.light-mode .sg-row:hover,body.light-mode .sg-row.sg-active { background:rgba(23,184,112,.1); color:#111; }
+    body.light-mode .sg-row { color:rgba(0,0,0,.65); border-bottom-color:rgba(0,0,0,.07); }
+    body.light-mode .sg-row:hover, body.light-mode .sg-row.sg-active {
+        background:rgba(23,184,112,.1); color:#111;
+    }
     `;
     document.head.appendChild(s);
 })();
 
+// ── Panel DOM helpers ──────────────────────────────────────────
 function _getPanel() {
     let p = document.getElementById("sg-panel");
     if (!p) {
         p = document.createElement("div"); p.id = "sg-panel";
         const wrap = document.querySelector(".textarea-wrapper");
-        if (wrap) wrap.appendChild(p);
+        if (wrap) {
+            wrap.style.position = "relative";
+            wrap.appendChild(p);  // append inside .textarea-wrapper
+        }
     }
     return p;
 }
 
 function _showPanel(list) {
-    const panel = _getPanel(); panel.innerHTML = "";
+    const panel = _getPanel();
+    panel.innerHTML = "";
     if (!list || !list.length) { panel.classList.remove("sg-visible"); return; }
+
     const q = (document.getElementById("user-input") || {}).value || "";
     list.slice(0,3).forEach(text => {
-        const btn = document.createElement("button"); btn.type = "button"; btn.className = "sg-row";
+        const btn = document.createElement("button");
+        btn.type = "button"; btn.className = "sg-row";
+
         let label = _esc(text);
-        if (q.trim()) {
-            const qt = q.trim();
-            if (text.toLowerCase().startsWith(qt.toLowerCase()))
+        const qt  = q.trim();
+        if (qt) {
+            if (text.toLowerCase().startsWith(qt.toLowerCase())) {
                 label = `<strong>${_esc(text.slice(0,qt.length))}</strong>${_esc(text.slice(qt.length))}`;
-            else {
+            } else {
                 const re = new RegExp(`(${qt.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")})`, "gi");
                 label = _esc(text).replace(re, "<strong>$1</strong>");
             }
         }
+
         btn.innerHTML = `
-            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <svg class="sg-ic" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <span class="sg-txt">${label}</span>
             <svg class="sg-arr" viewBox="0 0 24 24"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></svg>`;
+
         btn.addEventListener("mousedown", e => {
             e.preventDefault();
             const ta = document.getElementById("user-input");
             if (ta) { ta.value = text; autoResize(ta); ta.focus(); }
             _hidePanel();
-           
-            clearTimeout(_S.debounce);
-            _S.debounce = setTimeout(() => _fetchSugg(text, true), 80);
         });
         panel.appendChild(btn);
     });
@@ -182,77 +288,98 @@ function _hidePanel() {
 
 function _esc(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
+// ── New-chat suggestions: fetch fresh each time newChat() is called ──
 async function _prefetchNewChat() {
     if (_S.ncFetching) return;
-    _S.ncFetching = true; _S.ncReady = false; _S.ncList = [];
+    if (_S.ncReady && _S.ncList.length) {
+        const ta = document.getElementById("user-input");
+        if (ta && document.activeElement === ta && !ta.value.trim() && _S.mode === "new")
+            _showPanel(_S.ncList);
+        return;
+    }
+    _S.ncFetching = true;
     try {
-        const histCtx = chats.slice(0,5).map(c => c.title).join(", ");
-        const r = await fetch("/suggest", {
-            method:"POST", headers:{"Content-Type":"application/json"},
-            body: JSON.stringify({ query:"", new_chat:true, context:histCtx })
+        const r = await _apiFetch("/suggest", {
+            method: "POST",
+            headers: { "Content-Type":"application/json" },
+            body: JSON.stringify({ query:"", new_chat:true, context:"" })
         });
         if (!r.ok) throw new Error();
-        const d = await r.json();
+        const d    = await r.json();
         const list = Array.isArray(d.suggestions) ? d.suggestions.slice(0,3) : [];
-        _S.ncList = list; _S.ncReady = true;
-      
+        if (!list.length) return;
+        _S.ncList  = list;
+        _S.ncReady = true;
         const ta = document.getElementById("user-input");
         if (ta && document.activeElement === ta && !ta.value.trim() && _S.mode === "new")
             _showPanel(list);
-    } catch(e) { _S.ncReady = false; }
+    } catch(e) {}
     finally { _S.ncFetching = false; }
 }
 
-function _scheduleFetch(query, delay, bg=false) {
+// ── Typing suggestions — debounced 400ms, fires only on full words ──
+function _scheduleFetch(query, delay) {
     clearTimeout(_S.debounce);
-    if (!bg && _S.abort) { _S.abort.abort(); _S.abort = null; }
-    _S.debounce = setTimeout(() => _fetchSugg(query, bg), delay);
+    if (_S.abort) { _S.abort.abort(); _S.abort = null; }
+    _S.debounce = setTimeout(() => _fetchSugg(query), delay);
 }
 
-async function _fetchSugg(query, bg=false) {
-    const ctrl = new AbortController();
-    if (!bg) { if (_S.abort) _S.abort.abort(); _S.abort = ctrl; }
+async function _fetchSugg(query) {
+    if (_S.cache[query]) {
+        const ta = document.getElementById("user-input");
+        if (ta && ta.value.trim() === query) _showPanel(_S.cache[query]);
+        return;
+    }
+    const ctrl = new AbortController(); _S.abort = ctrl;
     try {
-        const r = await fetch("/suggest", {
-            method:"POST", headers:{"Content-Type":"application/json"},
+        const r = await _apiFetch("/suggest", {
+            method: "POST",
+            headers: { "Content-Type":"application/json" },
             body: JSON.stringify({ query, new_chat:false, context:_S.chatCtx }),
             signal: ctrl.signal
         });
         if (!r.ok) return;
-        const d = await r.json();
+        const d    = await r.json();
         const list = Array.isArray(d.suggestions) ? d.suggestions.slice(0,3) : [];
         if (!list.length) return;
-        _updateCache(query, list);
+        _S.cache[query] = list;
         const ta = document.getElementById("user-input");
-        if ((ta ? ta.value.trim() : "") !== query) return;
-        _S.lastQuery = query; _showPanel(list);
-    } catch(e) { /* AbortError – silent */ }
+        if (ta && ta.value.trim() === query) { _S.lastQuery = query; _showPanel(list); }
+    } catch(e) { /* AbortError — silent */ }
 }
 
-
+// ── Continue-chat: use last 3–5 messages as context ──────────────
 async function _loadContinueChips() {
-
-    const firstUser = currentChat.find(m => m.role === "user" && m.content && m.content !== "[PDF uploaded]");
-    if (!firstUser) return;
-    const ctx = (firstUser.content || "").slice(0,300).trim();
-    if (!ctx) return;
-    _S.chatCtx = ctx;
+    if (_S.ccList.length) {
+        const ta = document.getElementById("user-input");
+        if (ta && !ta.value.trim()) _showPanel(_S.ccList);
+        return;
+    }
+    // Build context from last 3–5 messages (skip PDF-only messages)
+    const recent = currentChat
+        .filter(m => m.content && m.content !== "[PDF uploaded]")
+        .slice(-5)
+        .map(m => (m.role === "user" ? "User: " : "Bot: ") + m.content.replace(/<[^>]*>/g,"").slice(0,200))
+        .join("\n");
+    if (!recent.trim()) return;
+    _S.chatCtx = recent;
     try {
-        const r = await fetch("/suggest", {
-            method:"POST", headers:{"Content-Type":"application/json"},
-            body: JSON.stringify({ query:"", new_chat:false, context:ctx })
+        const r = await _apiFetch("/suggest", {
+            method: "POST",
+            headers: { "Content-Type":"application/json" },
+            body: JSON.stringify({ query:"", new_chat:false, context: recent })
         });
         if (!r.ok) return;
-        const d = await r.json();
+        const d    = await r.json();
         const list = Array.isArray(d.suggestions) ? d.suggestions.slice(0,3) : [];
         if (!list.length) return;
         _S.ccList = list;
-        const ta = document.getElementById("user-input");
+        const ta  = document.getElementById("user-input");
         if (ta && !ta.value.trim()) _showPanel(list);
     } catch(e) {}
 }
 
-
+// ── Event wiring ─────────────────────────────────────────────────
 function _initSuggestions() {
     const ta = document.getElementById("user-input"); if (!ta) return;
 
@@ -272,28 +399,29 @@ function _initSuggestions() {
         _scheduleFetch(q, 0);
     });
 
+    // INPUT: only fire suggestion fetch after a complete word (space typed)
+    // or after 400ms idle — NOT on every keystroke
     ta.addEventListener("input", () => {
         const q = ta.value.trim();
+        autoResize(ta);
         if (!q) {
             _hidePanel();
-            if (_S.mode === "new" && _S.ncReady && _S.ncList.length) _showPanel(_S.ncList);
-            else if (_S.mode === "chat" && _S.ccList.length)          _showPanel(_S.ccList);
+            if (_S.mode === "new" && _S.ncReady && _S.ncList.length)  _showPanel(_S.ncList);
+            else if (_S.mode === "chat" && _S.ccList.length)           _showPanel(_S.ccList);
             return;
         }
-        if (_S.cache[q]) {
-            _showPanel(_S.cache[q]);
-            _scheduleFetch(q, 300, true); 
-            return;
-        }
-        _scheduleFetch(q, 10);
+        if (_S.cache[q]) { _showPanel(_S.cache[q]); return; }
+        // Only fetch after user finishes a word (ends with space) or 400ms idle
+        const endsWithSpace = ta.value.endsWith(" ");
+        _scheduleFetch(q, endsWithSpace ? 0 : 400);
     });
 
-    ta.addEventListener("blur", () => setTimeout(_hidePanel, 200));
+    ta.addEventListener("blur", () => setTimeout(_hidePanel, 220));
 
     ta.addEventListener("keydown", e => {
         const panel = document.getElementById("sg-panel");
         if (!panel || !panel.classList.contains("sg-visible")) return;
-        const rows = panel.querySelectorAll(".sg-row");
+        const rows   = panel.querySelectorAll(".sg-row");
         const active = panel.querySelector(".sg-row.sg-active");
         if (e.key === "ArrowDown") {
             e.preventDefault();
@@ -305,42 +433,89 @@ function _initSuggestions() {
             rows.forEach(r => r.classList.remove("sg-active")); if (prv) prv.classList.add("sg-active");
         } else if (e.key === "Tab") {
             const sel = panel.querySelector(".sg-row.sg-active") || rows[0];
-            if (sel) { e.preventDefault(); ta.value = sel.querySelector(".sg-txt").textContent.trim(); autoResize(ta); _hidePanel(); }
-        } else if (e.key === "Escape") { _hidePanel(); ta.focus(); }
+            if (sel) {
+                e.preventDefault();
+                const txt = sel.querySelector(".sg-txt");
+                ta.value  = txt ? txt.textContent.trim() : "";
+                autoResize(ta); _hidePanel();
+            }
+        } else if (e.key === "Escape") { _hidePanel(); }
     });
 }
 
-function _resetSugg(mode="new") {
+function _resetSugg(mode = "new") {
     _hidePanel();
-    Object.assign(_S, { cache:{}, chatCtx:"", ccList:[], ncReady:false, ncList:[], ncFetching:false, lastQuery:null, mode });
+    _S.cache     = {};
+    _S.chatCtx   = "";
+    _S.ccList    = [];
+    _S.ncReady   = false;
+    _S.ncList    = [];
+    _S.ncFetching = false;
+    _S.lastQuery = null;
+    _S.mode      = mode;
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  INIT APP
+// ═══════════════════════════════════════════════════════════════
+let _appInitDone = false; // guard against double-init within the same page load
 
 function initApp() {
     if (isSharedView) {
         document.querySelector(".sidebar").style.display = "none";
-        const sb = document.getElementById("share-btn"); if (sb) sb.style.display = "none";
+        const sb = document.getElementById("share-btn");   if (sb) sb.style.display = "none";
         const pw = document.querySelector(".pinned-wrapper"); if (pw) pw.style.display = "none";
         loadSharedChatView();
-    } else {
-        loadHistory();
+        return;
     }
+
+    // Guarantee a clean empty chat on every login.
+    // State is reset here; suggestions are NOT pre-fetched yet —
+    // we wait until history is loaded so suggestions have real context.
+    _resetSugg("new");
+    currentChatId = null; currentTitle = null; currentChat = [];
+    currentChatPDFs = []; pendingPDFs = []; currentTopic = null;
+    document.getElementById("chat-box").innerHTML = "";
+    document.getElementById("selected-file").innerHTML = "";
+    updateTopicUI();
+
     if (localStorage.getItem("theme") === "light") {
         document.body.classList.add("light-mode");
         document.getElementById("theme-btn").textContent = "☀️";
     }
-    document.getElementById("user-input").addEventListener("keydown", e => {
-        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+
+    // Wire up listeners exactly once per page load
+    if (!_appInitDone) {
+        _appInitDone = true;
+        const ta = document.getElementById("user-input");
+        ta.addEventListener("keydown", e => {
+            if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+        });
+        initMic();
+        _initSuggestions();
+    }
+
+    // Load history first, THEN prefetch suggestions with real chat context.
+    // This ensures suggestions are personalised, not the same defaults every time.
+    loadHistory().then(() => {
+        _prefetchNewChat();
     });
-    initMic();
-    _initSuggestions();
-    if (!isSharedView) _prefetchNewChat();
 }
 
-function cleanText(t)  { return t.replace(/<[^>]*>/g, ""); }
-function autoResize(el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 150) + "px"; }
+function cleanText(t) { return t.replace(/<[^>]*>/g, ""); }
+function _uid()       { return "bot-" + Date.now() + "-" + Math.floor(Math.random()*9999); }
 
+// ChatGPT-style auto-resize textarea
+function autoResize(el) {
+    if (!el) return;
+    el.style.height = "auto";
+    const maxH = 400;
+    el.style.height = Math.min(el.scrollHeight, maxH) + "px";
+}
 
+// ═══════════════════════════════════════════════════════════════
+//  TYPEWRITER
+// ═══════════════════════════════════════════════════════════════
 function typewriterAnimate(container, html, onDone) {
     const tokens = []; const temp = document.createElement("div"); temp.innerHTML = html;
     function walk(node) {
@@ -352,7 +527,7 @@ function typewriterAnimate(container, html, onDone) {
                 tokens.push({ type:"void", html:node.outerHTML });
             } else {
                 const clone = node.cloneNode(false);
-                tokens.push({ type:"open", html:clone.outerHTML.replace(/><\/[^>]+>$/, ">") });
+                tokens.push({ type:"open", html:clone.outerHTML.replace(/><\/[^>]+>$/,">") });
                 node.childNodes.forEach(walk);
                 tokens.push({ type:"close", tag });
             }
@@ -360,7 +535,8 @@ function typewriterAnimate(container, html, onDone) {
     }
     temp.childNodes.forEach(walk);
     container.innerHTML = "";
-    const cursor = document.createElement("span"); cursor.className = "typing-cursor"; container.appendChild(cursor);
+    const cursor = document.createElement("span"); cursor.className = "typing-cursor";
+    container.appendChild(cursor);
     const stack = [container]; let idx = 0;
     const interval = setInterval(() => {
         for (let b = 0; b < 3 && idx < tokens.length; b++, idx++) {
@@ -376,7 +552,8 @@ function typewriterAnimate(container, html, onDone) {
             } else if (tok.type === "close") {
                 if (stack.length > 1) { stack.pop(); stack[stack.length-1].appendChild(cursor); }
             } else if (tok.type === "void") {
-                const w = document.createElement("div"); w.innerHTML = tok.html; cur.insertBefore(w.firstChild, cursor);
+                const w = document.createElement("div"); w.innerHTML = tok.html;
+                cur.insertBefore(w.firstChild, cursor);
             }
         }
         if (idx >= tokens.length) { clearInterval(interval); cursor.remove(); if (onDone) onDone(); }
@@ -384,7 +561,9 @@ function typewriterAnimate(container, html, onDone) {
     }, 8);
 }
 
-
+// ═══════════════════════════════════════════════════════════════
+//  MIC / VOICE  — improved for slow speakers
+// ═══════════════════════════════════════════════════════════════
 let recognition = null, micListening = false, micFinalText = "";
 let audioCtx = null, analyser = null, audioSource = null, audioStream = null, waveRAF = null;
 
@@ -393,10 +572,10 @@ function initMic() {
     const btn = document.getElementById("mic-btn");
     if (!SR) { if (btn) btn.style.display = "none"; return; }
     recognition = new SR();
-    recognition.continuous     = true;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 3;  
-    recognition.lang           = "en-US";
+    recognition.continuous      = true;
+    recognition.interimResults  = true;
+    recognition.maxAlternatives = 3;    // more choices = better accuracy for slow speech
+    recognition.lang            = "en-US";
 
     recognition.onresult = function(event) {
         let interim = "";
@@ -406,19 +585,18 @@ function initMic() {
         }
         const ta = document.getElementById("user-input");
         ta.value = (micFinalText + interim).trim(); autoResize(ta);
-        const q = ta.value.trim(); if (q) _scheduleFetch(q, 80);
     };
     recognition.onerror = function(ev) {
         if (ev.error === "no-speech" || ev.error === "aborted") return;
         if (ev.error === "not-allowed") { showUploadError("Microphone permission denied."); stopMic(); }
     };
-    recognition.onend = function() { 
-        if (micListening) { 
+    // Auto-restart keeps continuous mode alive for slow speakers
+    recognition.onend = function() {
+        if (micListening) {
             const ta = document.getElementById("user-input");
-            micFinalText = ta.value;
-            if (micFinalText && !micFinalText.endsWith(" ")) micFinalText += " ";
-            try { recognition.start(); } catch(e) {} 
-        } 
+            if (ta.value && !ta.value.endsWith(" ")) micFinalText = ta.value + " ";
+            try { recognition.start(); } catch(e) {}
+        }
     };
 }
 
@@ -431,8 +609,7 @@ async function startMic() {
     micFinalText = ta.value; if (micFinalText && !micFinalText.endsWith(" ")) micFinalText += " ";
     micListening = true;
     document.getElementById("mic-btn").classList.add("listening"); ta.classList.add("mic-listening");
-    try { recognition.start(); } catch(e) {}
-    await startWave();
+    try { recognition.start(); } catch(e) {} await startWave();
 }
 function stopMic() {
     micListening = false;
@@ -477,11 +654,14 @@ function stopWave() {
     const canvas = document.getElementById("voice-wave-canvas"); canvas.classList.remove("active");
     const ctx = canvas.getContext("2d"); ctx.clearRect(0,0,canvas.width,canvas.height);
     try { if (audioSource) audioSource.disconnect(); } catch(e) {}
-    try { if (audioCtx) audioCtx.close(); }           catch(e) {}
+    try { if (audioCtx) audioCtx.close(); } catch(e) {}
     try { if (audioStream) audioStream.getTracks().forEach(t => t.stop()); } catch(e) {}
     audioCtx = analyser = audioSource = audioStream = null;
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  DROPDOWNS
+// ═══════════════════════════════════════════════════════════════
 function toggleVizDropdown(e) {
     e.stopPropagation();
     const menu = document.getElementById("viz-dropdown-menu"), btn = document.getElementById("viz-dropdown-btn");
@@ -505,7 +685,9 @@ document.addEventListener("click", e => {
         document.querySelectorAll(".export-dropdown").forEach(d => d.classList.remove("show"));
 });
 
-
+// ═══════════════════════════════════════════════════════════════
+//  TOPIC
+// ═══════════════════════════════════════════════════════════════
 function openTopicModal() {
     document.getElementById("topic-modal-overlay").classList.add("show");
     document.getElementById("topic-input").value = currentTopic || "";
@@ -528,7 +710,7 @@ function clearTopic() {
     document.getElementById("topic-input").value = ""; updateTopicActiveRow();
     document.getElementById("topic-modal-overlay").classList.remove("show");
     updateTopicUI(); removeTopicBanner(); saveCurrentChat();
-   
+    // FIX: no error on next message — topic_lock will be null
 }
 function updateTopicUI() {
     const btn = document.getElementById("topic-lock-btn"), label = document.getElementById("topic-lock-label");
@@ -546,11 +728,14 @@ function updateTopicActiveRow() {
 function showTopicBanner() {
     removeTopicBanner();
     const banner = document.createElement("div"); banner.className = "topic-banner"; banner.id = "topic-banner";
-    banner.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span>Topic locked to: <strong>${currentTopic}</strong> — responses limited to this topic.</span>`;
+    banner.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span>Topic locked to: <strong>${currentTopic}</strong></span>`;
     document.getElementById("chat-box").insertBefore(banner, document.getElementById("chat-box").firstChild);
 }
 function removeTopicBanner() { const old = document.getElementById("topic-banner"); if (old) old.remove(); }
 
+// ═══════════════════════════════════════════════════════════════
+//  SHARE
+// ═══════════════════════════════════════════════════════════════
 async function toggleShare() {
     if (!currentChatId) { showUploadError("Start a chat first before sharing."); return; }
     const btnText = document.getElementById("share-btn-text");
@@ -558,11 +743,10 @@ async function toggleShare() {
     const wasShared = chatObj ? chatObj.is_shared : false;
     if (btnText) btnText.textContent = "Toggling...";
     try {
-        const res  = await fetch(wasShared ? `/unshare/${currentChatId}` : `/share/${currentChatId}`, { method:"POST" });
+        const res  = await _apiFetch(wasShared ? `/unshare/${currentChatId}` : `/share/${currentChatId}`, { method:"POST" });
         const data = await res.json();
         if (data.status === "success") {
-            if (chatObj) chatObj.is_shared = data.is_shared;
-            updateHistory();
+            if (chatObj) chatObj.is_shared = data.is_shared; updateHistory();
             if (btnText) btnText.textContent = data.is_shared ? "Unshare" : "Share";
             if (data.is_shared && data.share_id) {
                 document.getElementById("share-link-input").value = `${window.location.origin}/shared/${data.share_id}`;
@@ -587,7 +771,9 @@ function closeShareModal(e) {
     document.getElementById("share-modal-overlay").classList.remove("show");
 }
 
-
+// ═══════════════════════════════════════════════════════════════
+//  MESSAGES  — shared helper reduces duplication
+// ═══════════════════════════════════════════════════════════════
 function _makeEditBtn(wrapper, text, msgIndex) {
     const btn = document.createElement("button"); btn.className = "msg-edit-btn"; btn.title = "Edit";
     btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
@@ -597,7 +783,7 @@ function _makeEditBtn(wrapper, text, msgIndex) {
 
 function renderUserMessage(text, msgIndex, container) {
     const wrapper = document.createElement("div"); wrapper.className = "msg-user-wrap"; wrapper.dataset.index = msgIndex;
-    const bubble = document.createElement("div"); bubble.className = "msg user"; bubble.textContent = text;
+    const bubble  = document.createElement("div"); bubble.className = "msg user"; bubble.textContent = text;
     wrapper.appendChild(bubble); wrapper.appendChild(_makeEditBtn(wrapper, text, msgIndex));
     container.appendChild(wrapper); return wrapper;
 }
@@ -608,8 +794,8 @@ function startEditMessage(wrapper, originalText, msgIndex) {
     const resize = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight,120)+"px"; };
     ta.addEventListener("input", resize);
     setTimeout(() => { ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length); resize(); }, 10);
-    const actions = document.createElement("div"); actions.className = "msg-edit-actions";
-    const saveBtn = document.createElement("button"); saveBtn.className = "msg-edit-save"; saveBtn.textContent = "Save & Send";
+    const actions   = document.createElement("div"); actions.className = "msg-edit-actions";
+    const saveBtn   = document.createElement("button"); saveBtn.className = "msg-edit-save"; saveBtn.textContent = "Save & Send";
     const cancelBtn = document.createElement("button"); cancelBtn.className = "msg-edit-cancel"; cancelBtn.textContent = "Cancel";
     saveBtn.addEventListener("click",   () => saveEditMessage(wrapper, ta.value.trim(), msgIndex));
     cancelBtn.addEventListener("click", () => cancelEditMessage(wrapper, originalText, msgIndex));
@@ -631,27 +817,14 @@ async function saveEditMessage(wrapper, newText, msgIndex) {
     if (!newText) return;
     currentChat[msgIndex].content = newText;
     const chatBox = document.getElementById("chat-box");
-    const allItems = [...chatBox.querySelectorAll(".msg-user-wrap, .msg.bot, .msg-bot-wrap")];
+    const allItems = [...chatBox.querySelectorAll(".msg-user-wrap,.msg.bot,.msg-bot-wrap")];
     let found = false;
     for (const el of allItems) { if (el === wrapper) { found = true; continue; } if (found) el.remove(); }
     currentChat.splice(msgIndex + 1);
     wrapper.classList.remove("editing"); wrapper.innerHTML = "";
     const bubble = document.createElement("div"); bubble.className = "msg user"; bubble.textContent = newText;
     wrapper.appendChild(bubble); wrapper.appendChild(_makeEditBtn(wrapper, newText, msgIndex));
-    await sendEditedMessage(newText);
-}
-
-async function sendEditedMessage(msg) {
-    const chatBox = document.getElementById("chat-box");
-    const ld = _makeLoader(); chatBox.appendChild(ld); scrollToBottom();
-    try {
-        const res = await _callChat(msg);
-        ld.remove();
-        _appendBotMsg(res.reply || "<p>Sorry, no response received.</p>", chatBox, () => {
-            wrapTables(chatBox.lastElementChild); scrollToBottom(); saveCurrentChat();
-            _loadContinueChips();
-        });
-    } catch(err) { ld.remove(); _appendError(err.message, chatBox); scrollToBottom(); }
+    await _sendAndAppend(newText, chatBox, true);
 }
 
 function renderBotMessage(msg, container) {
@@ -667,33 +840,48 @@ function renderBotMessage(msg, container) {
     }
 }
 
+// ── Shared send helper (used by both send + edit) ───────────────
+async function _sendAndAppend(msg, chatBox, isEdit = false) {
+    const ld = document.createElement("div"); ld.className = "msg bot loading"; ld.innerHTML = "<span></span><span></span><span></span>";
+    chatBox.appendChild(ld); scrollToBottom();
+    try {
+        const pdfContent = currentChatPDFs.map(p => p.content).join("\n\n---\n\n");
+        const history    = currentChat.filter(m => !m.vizType && m.content).slice(-10).map(m => ({ role:m.role, content:m.content }));
+        const endpoint   = isSharedView ? "/shared/chat/"+sharedToken : "/chat";
+        const res = await _apiFetch(endpoint, {
+            method: "POST", headers: { "Content-Type":"application/json" },
+            body: JSON.stringify({
+                message: msg, pdf_text: pdfContent,
+                use_pdf: currentChatPDFs.length > 0,
+                conversation_history: history,
+                topic_lock: currentTopic || null   // null = no restriction
+            })
+        });
+        if (!res.ok) { const err = await res.json().catch(()=>({})); throw new Error(err.detail||`Server error ${res.status}`); }
+        const data      = await res.json(); ld.remove();
+        const replyHtml = data.reply || "<p>Sorry, no response received.</p>";
+        const botMsg    = { role:"bot", content:replyHtml, msgId:_uid() };
+        const wrapper   = document.createElement("div"); wrapper.className = "msg bot"; wrapper.id = botMsg.msgId;
+        chatBox.appendChild(wrapper);
+        typewriterAnimate(wrapper, replyHtml, () => {
+            currentChat.push(botMsg); wrapTables(wrapper); scrollToBottom();
+            if (isSharedView) return;
+            saveCurrentChat();
+            // Reset ccList so next focus re-fetches based on NEW context
+            _S.ccList  = [];
+            _S.chatCtx = "";
+            _loadContinueChips();
+        });
+    } catch(err) {
+        ld.remove();
+        const ed = document.createElement("div"); ed.className = "msg bot error";
+        ed.textContent = "Error: "+err.message; chatBox.appendChild(ed); scrollToBottom();
+    }
+}
 
-function _uid() { return "bot-"+Date.now()+"-"+Math.floor(Math.random()*9999); }
-function _makeLoader() {
-    const d = document.createElement("div"); d.className = "msg bot loading"; d.innerHTML = "<span></span><span></span><span></span>"; return d;
-}
-function _appendError(msg, container) {
-    const ed = document.createElement("div"); ed.className = "msg bot error"; ed.textContent = "Error: "+msg; container.appendChild(ed);
-}
-function _appendBotMsg(html, container, onDone) {
-    const botMsg = { role:"bot", content:html, msgId:_uid() };
-    const wrapper = document.createElement("div"); wrapper.className = "msg bot"; wrapper.id = botMsg.msgId;
-    container.appendChild(wrapper);
-    typewriterAnimate(wrapper, html, () => { currentChat.push(botMsg); if (onDone) onDone(); });
-    return botMsg;
-}
-async function _callChat(msg) {
-    const pdfContent = currentChatPDFs.map(p => p.content).join("\n\n---\n\n");
-    const history    = currentChat.filter(m => !m.vizType && m.content).slice(-10).map(m => ({ role:m.role, content:m.content }));
-    const res = await fetch("/chat", { method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ message:msg, pdf_text:pdfContent, use_pdf:currentChatPDFs.length>0,
-            conversation_history:history,
-          
-            topic_lock: currentTopic || null }) });
-    if (!res.ok) { const err = await res.json().catch(()=>({})); throw new Error(err.detail||`Server error ${res.status}`); }
-    return res.json();
-}
-
+// ═══════════════════════════════════════════════════════════════
+//  VISUALIZATION
+// ═══════════════════════════════════════════════════════════════
 async function requestVisualization(viewType, chartType) {
     closeAllDropdowns();
     const botMsgs = currentChat.filter(m => m.role==="bot" && !m.vizType);
@@ -708,26 +896,27 @@ async function requestVisualization(viewType, chartType) {
         const chatText    = currentChat.filter(m=>m.role==="bot"&&!m.vizType)
             .map(m=>{const d=document.createElement("div");d.innerHTML=m.content||"";return d.textContent;}).join("\n\n");
         const htmlContent = viewType==="table" ? (lastBot.content||"") : "";
-
-        const res = await fetch("/extract_viz",{method:"POST",headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({viz_type:viewType,html_content:htmlContent,chat_text:chatText,chart_type:chartType||"bar"})});
+        // Single API call — extract_viz now returns explanation too
+        const res = await _apiFetch("/extract_viz", {
+            method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({ viz_type:viewType, html_content:htmlContent, chat_text:chatText, chart_type:chartType||"bar" })
+        });
         if (!res.ok) throw new Error(`Extract failed ${res.status}`);
         const extracted = await res.json();
 
-        lastBot.selected_view = viewType; lastBot.chart_type = chartType; lastBot.extracted_data = extracted;
-        
-        if (extracted.explanation) {
-            lastBot.viz_explanation = extracted.explanation;
-        }
+        lastBot.selected_view  = viewType;
+        lastBot.chart_type     = chartType;
+        lastBot.extracted_data = extracted;
 
         renderVizSection(vizSection, viewType, chartType, extracted);
-        
+        wrapTables(vizSection);
+
+        // Explanation is now returned in the same response (no extra API call)
         if (extracted.explanation) {
+            lastBot.viz_explanation = extracted.explanation;
             const expDiv = document.createElement("div"); expDiv.className = "viz-explanation";
             expDiv.innerHTML = extracted.explanation; vizSection.appendChild(expDiv);
         }
-        
-        wrapTables(vizSection);
 
         scrollToBottom(); saveCurrentChat();
     } catch(err) { vizSection.innerHTML = `<div class="viz-nodata">⚠ Could not extract data: ${err.message}</div>`; }
@@ -756,12 +945,12 @@ function renderChart(container, chartType, data) {
     container.innerHTML = `<div class="viz-chart-wrap"><div class="viz-chart-title">📊 ${CHART_NAMES[chartType]||"Chart"}</div><div class="viz-canvas-box"><canvas id="${canvasId}"></canvas></div></div>`;
     requestAnimationFrame(() => {
         const canvas = document.getElementById(canvasId); if (!canvas) return;
-        const style = getComputedStyle(document.documentElement);
+        const style  = getComputedStyle(document.documentElement);
         const textColor = style.getPropertyValue("--chart-text").trim()||"#e0e0e0";
         const gridColor = style.getPropertyValue("--chart-grid").trim()||"rgba(255,255,255,0.1)";
-        const isCirc = ["pie","doughnut"].includes(chartType); const isRadar = chartType==="radar";
+        const isCirc    = ["pie","doughnut"].includes(chartType); const isRadar = chartType==="radar";
         const numValues = data.values.map(v=>{const n=parseFloat(String(v).replace(/[^0-9.\-]/g,""));return isNaN(n)?0:n;});
-        const count = numValues.length;
+        const count     = numValues.length;
         const bgColors  = Array.from({length:count},(_,i)=>CHART_COLORS[i%CHART_COLORS.length]+"cc");
         const bdrColors = Array.from({length:count},(_,i)=>CHART_COLORS[i%CHART_COLORS.length]);
         let datasets;
@@ -775,42 +964,72 @@ function renderChart(container, chartType, data) {
               y:{title:{display:true,text:data.yLabel||"Value",color:textColor,font:{size:13,weight:"bold",...font}},ticks:{color:textColor,font},grid:{color:gridColor},beginAtZero:true}};
         chartRegistry[canvasId] = new Chart(canvas,{type:chartType,data:{labels:data.labels,datasets},
             options:{responsive:true,maintainAspectRatio:false,animation:{duration:500},
-                plugins:{legend:{display:true,labels:{color:textColor,font:{size:13,...font},padding:16,usePointStyle:true}},tooltip:{bodyFont:{size:13,...font},titleFont:{size:13,...font}}},
-                scales:scalesConfig}});
+                plugins:{legend:{display:true,labels:{color:textColor,font:{size:13,...font},padding:16,usePointStyle:true}},
+                    tooltip:{bodyFont:{size:13,...font},titleFont:{size:13,...font}}},scales:scalesConfig}});
     });
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  SAVE / HISTORY  — optimised, lazy load, no duplicate calls
+// ═══════════════════════════════════════════════════════════════
 let _historyFetching = false;
+
+// Update the in-memory chats array after a save — avoids a full re-fetch
+function _updateLocalChat(id, title, topic, pdfs) {
+    const existing = chats.find(c => c.id === id);
+    if (existing) {
+        existing.title = title;
+        existing.topic = topic;
+    } else {
+        chats.push({
+            id, title, topic,
+            is_pinned: false, is_shared: false,
+            original_index: chats.length
+        });
+    }
+    updateHistory();
+}
 
 function saveCurrentChat() {
     if (!currentTitle) return;
-    fetch("/save_chat",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({id:currentChatId,title:currentTitle,messages:currentChat,
-            pdfs:currentChatPDFs.map(p=>({name:p.name,content:p.content})),topic:currentTopic||null})
-    }).then(r=>r.json()).then(data=>{if(data.id)currentChatId=data.id;loadHistory();})
+    _apiFetch("/save_chat", {
+        method: "POST", headers: { "Content-Type":"application/json" },
+        body: JSON.stringify({
+            id: currentChatId, title: currentTitle, messages: currentChat,
+            pdfs: currentChatPDFs.map(p=>({name:p.name,content:p.content})),
+            topic: currentTopic || null
+        })
+    }).then(r=>r.json()).then(data=>{
+        if (data.id) {
+            currentChatId = data.id;
+            // Update sidebar in-memory — NO extra /chats fetch
+            _updateLocalChat(data.id, data.title || currentTitle, currentTopic || null,
+                currentChatPDFs.map(p=>({name:p.name})));
+        }
+    })
     .catch(e=>console.warn("Save:",e));
 }
 
 function newChat() {
-    currentChatId=null;currentTitle=null;currentChat=[];currentChatPDFs=[];pendingPDFs=[];currentTopic=null;
+    currentChatId=null; currentTitle=null; currentChat=[]; currentChatPDFs=[]; pendingPDFs=[]; currentTopic=null;
     document.getElementById("chat-box").innerHTML="";
     document.getElementById("selected-file").innerHTML="";
-    closePdfPreview(); if(micListening)stopMic(); updateTopicUI();
+    closePdfPreview(); if(micListening) stopMic(); updateTopicUI();
     _resetSugg("new");
-    _prefetchNewChat();
+    _prefetchNewChat();  // immediately start pre-fetching for this new blank chat
 }
 
 async function loadHistory() {
     if (_historyFetching) return;
     _historyFetching = true;
-    try { const r = await fetch("/chats"); chats = await r.json()||[]; }
-    catch { chats = []; }
+    try {
+        const r = await _apiFetch("/chats"); chats = await r.json() || [];
+    } catch { chats = []; }
     finally { _historyFetching = false; }
     updateHistory();
 }
-
 function updateHistory() {
-    const q = document.getElementById("search-box").value.toLowerCase();
+    const q  = document.getElementById("search-box").value.toLowerCase();
     const fc = chats.filter(c => c.title.toLowerCase().includes(q));
     renderChatList(fc.filter(c=>c.is_shared),  "shared-history");
     renderChatList(fc.filter(c=>!c.is_shared), "chat-history");
@@ -837,7 +1056,7 @@ function renderChatList(list, containerId) {
 
 function toggleMenu(e, id) {
     e.stopPropagation(); document.querySelectorAll(".menu").forEach(m=>m.classList.remove("show"));
-    const menuEl = document.getElementById(`menu-${id}`); if (menuEl) menuEl.classList.toggle("show");
+    const el = document.getElementById(`menu-${id}`); if (el) el.classList.toggle("show");
 }
 function togglePinned(e) {
     e.stopPropagation(); closeAllDropdowns();
@@ -849,20 +1068,20 @@ function togglePinned(e) {
     box.classList.add("show");
 }
 
-
+// FIX: pin → top; unpin → original position
 async function togglePin(id) {
     const numId = Number(id); const chat = chats.find(c=>Number(c.id)===numId); if (!chat) return;
     const ns = !chat.is_pinned;
     try {
-        const res = await fetch(`/chat/${numId}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({is_pinned:ns})});
-        if (!res.ok) { console.error("Pin failed:", res.status); return; }
+        const res = await _apiFetch(`/chat/${numId}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({is_pinned:ns}) });
+        if (!res.ok) return;
         if (ns && chat.original_index === undefined) chat.original_index = chats.indexOf(chat);
         chat.is_pinned = ns; updateHistory();
     } catch(e) { console.error("togglePin:", e); }
 }
 async function deleteChat(id) {
     try {
-        await fetch(`/chat/${id}`,{method:"DELETE"});
+        await _apiFetch(`/chat/${id}`, {method:"DELETE"});
         chats = chats.filter(c=>c.id!==id); if(currentChatId===id) newChat(); updateHistory();
     } catch(e) { console.error(e); }
 }
@@ -877,26 +1096,32 @@ async function saveRename(id) {
     const nt = ri.value.trim(); if (!nt) { updateHistory(); return; }
     if (chats.find(c=>c.title===nt&&c.id!==id)) { alert("Title exists!"); updateHistory(); return; }
     try {
-        await fetch(`/chat/${id}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:nt})});
-        const chat = chats.find(c=>c.id===id); if (chat) chat.title=nt; if(currentChatId===id) currentTitle=nt; updateHistory();
+        await _apiFetch(`/chat/${id}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({title:nt}) });
+        const chat = chats.find(c=>c.id===id); if(chat) chat.title=nt; if(currentChatId===id) currentTitle=nt;
+        updateHistory();
     } catch(e) { alert("Failed to rename."); updateHistory(); }
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  PDF
+// ═══════════════════════════════════════════════════════════════
 function toggleFileMenu(e) { e.stopPropagation(); document.getElementById("file-menu").classList.toggle("show"); }
 async function handlePDF(e) {
     const file = e.target.files[0]; if (!file) return;
     document.getElementById("file-menu").classList.remove("show");
-    if (file.size>10*1024*1024) { showUploadError("PDF too large (max 10MB)."); e.target.value=""; return; }
+    if (file.size > 10*1024*1024) { showUploadError("PDF too large (max 10MB)."); e.target.value=""; return; }
     const lid = Date.now(); addPendingPDFUI(file.name, lid, true, null);
     try {
         const fd = new FormData(); fd.append("file", file);
-        const res = await fetch("/upload_pdf",{method:"POST",body:fd});
+        const res = await _apiFetch("/upload_pdf", { method:"POST", body:fd });
         let data = {}; try { data = await res.json(); } catch {}
         if (!res.ok) throw new Error(data.detail||`Server error ${res.status}`);
         if (!data.content) throw new Error("No text from PDF.");
         removePendingPDFUI(lid);
         const blobUrl = URL.createObjectURL(file);
-        const reader  = new FileReader(); reader.onload = ev => savePDFToStore(file.name, btoa(ev.target.result)); reader.readAsBinaryString(file);
+        const reader  = new FileReader();
+        reader.onload = ev => savePDFToStore(file.name, btoa(ev.target.result));
+        reader.readAsBinaryString(file);
         const pd = {id:Date.now(),name:file.name,content:data.content,url:blobUrl};
         pendingPDFs.push(pd); addPendingPDFUI(pd.name, pd.id, false, blobUrl);
     } catch(err) { removePendingPDFUI(lid); showUploadError("Upload failed: "+err.message); }
@@ -909,8 +1134,14 @@ function showUploadError(msg) {
 }
 function makePdfChip(name, url, isPending) {
     const div = document.createElement("div"); const resolved = resolveUrl(name, url);
-    if (isPending) { div.className="selected-pdf-item"; div.innerHTML=`<span class="pdf-icon">📄</span><span class="pdf-name">${name}</span>`; }
-    else           { div.className="msg-pdf"+(resolved?"":" no-preview"); div.innerHTML=`<span class="pdf-icon">📄</span><span class="pdf-label">${name}</span>`; if (!resolved) div.title="PDF not stored — re-upload"; }
+    if (isPending) {
+        div.className="selected-pdf-item";
+        div.innerHTML=`<span class="pdf-icon">📄</span><span class="pdf-name">${name}</span>`;
+    } else {
+        div.className="msg-pdf"+(resolved?"":" no-preview");
+        div.innerHTML=`<span class="pdf-icon">📄</span><span class="pdf-label">${name}</span>`;
+        if (!resolved) div.title="PDF not stored — re-upload";
+    }
     if (resolved) {
         div.dataset.pdfUrl = resolved; div.dataset.pdfName = name;
         div.addEventListener("click", ev=>{ if (!ev.target.classList.contains("pdf-remove")) previewPDF(div.dataset.pdfUrl,div.dataset.pdfName); });
@@ -921,9 +1152,10 @@ function addPendingPDFUI(name, id, isLoading, url) {
     const c = document.getElementById("selected-file");
     if (isLoading) {
         const d = document.createElement("div"); d.className="selected-pdf-item"; d.id=`pending-pdf-${id}`;
-        d.innerHTML=`<span class="pdf-icon">📄</span><span class="pdf-name">${name}</span><span class="pdf-loading">Uploading...</span>`; c.appendChild(d);
+        d.innerHTML=`<span class="pdf-icon">📄</span><span class="pdf-name">${name}</span><span class="pdf-loading">Uploading...</span>`;
+        c.appendChild(d);
     } else {
-        const d = makePdfChip(name, url, true); d.id=`pending-pdf-${id}`;
+        const d = makePdfChip(name,url,true); d.id=`pending-pdf-${id}`;
         const rb = document.createElement("span"); rb.className="pdf-remove"; rb.textContent="✕";
         rb.addEventListener("click", ev=>{ev.stopPropagation();removePendingPDF(id);}); d.appendChild(rb); c.appendChild(d);
     }
@@ -941,23 +1173,22 @@ function closePdfPreview() {
     document.getElementById("pdf-frame").src = "";
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  LOAD CHAT  — lazy load messages on demand (fast page load)
+// ═══════════════════════════════════════════════════════════════
 async function loadChat(id) {
     const meta = chats.find(c=>c.id===id); if (!meta) return;
     _resetSugg("chat");
-    document.getElementById("chat-box").innerHTML="<div class='msg bot loading'><span></span><span></span><span></span></div>";
-    
+    document.getElementById("chat-box").innerHTML = "<div class='msg bot loading'><span></span><span></span><span></span></div>";
     try {
-        const r = await fetch("/chat/" + id);
+        const r = await _apiFetch("/chat/"+id);
         if (!r.ok) throw new Error();
         const chat = await r.json();
-        
-        currentChatId=id; currentTitle=chat.title; currentChat=[...chat.messages];
-        currentChatPDFs=(chat.pdfs||[]).map(p=>({name:p.name,content:p.content,url:null}));
+        currentChatId   = id; currentTitle = chat.title; currentChat = [...chat.messages];
+        currentChatPDFs = (chat.pdfs||[]).map(p=>({name:p.name,content:p.content,url:null}));
         pendingPDFs=[]; currentTopic=chat.topic||null; updateTopicUI();
-        document.getElementById("chat-box").innerHTML="";
-        document.getElementById("selected-file").innerHTML="";
-        closePdfPreview();
-        const chatBox = document.getElementById("chat-box");
+        const chatBox = document.getElementById("chat-box"); chatBox.innerHTML="";
+        document.getElementById("selected-file").innerHTML=""; closePdfPreview();
         if (currentTopic) showTopicBanner();
         const btnText = document.getElementById("share-btn-text");
         if (btnText) btnText.textContent = chat.is_shared?"Unshare":"Share";
@@ -975,10 +1206,9 @@ async function loadChat(id) {
 async function loadSharedChatView() {
     _resetSugg("chat");
     document.getElementById("chat-box").innerHTML="";
-    document.getElementById("selected-file").innerHTML="";
-    closePdfPreview();
+    document.getElementById("selected-file").innerHTML=""; closePdfPreview();
     try {
-        const r = await fetch("/api/shared/"+sharedToken);
+        const r = await _apiFetch("/api/shared/"+sharedToken);
         if (!r.ok) { document.getElementById("chat-box").innerHTML="<div class='msg bot error'>Failed to load shared chat.</div>"; return; }
         const data = await r.json();
         currentTitle=data.title||"Shared Chat"; currentTopic=data.topic||null; updateTopicUI();
@@ -988,18 +1218,21 @@ async function loadSharedChatView() {
             if (msg.role==="bot") renderBotMessage(msg,chatBox); else renderUserMessage(msg.content||"",idx,chatBox);
         });
         wrapTables(chatBox); scrollToBottom();
-        _loadContinueChips();
+        _loadContinueChips();  // suggestions in shared chat too
     } catch(e) { document.getElementById("chat-box").innerHTML="<div class='msg bot error'>Error loading chat.</div>"; }
 }
 
-function scrollToBottom() { const cb=document.getElementById("chat-box"); cb.scrollTop=cb.scrollHeight; }
+function scrollToBottom() { const cb=document.getElementById("chat-box"); if(cb) cb.scrollTop=cb.scrollHeight; }
 
+// ═══════════════════════════════════════════════════════════════
+//  SEND MESSAGE
+// ═══════════════════════════════════════════════════════════════
 async function sendMessage() {
     const input = document.getElementById("user-input"); const msg = input.value.trim();
     if (!msg && pendingPDFs.length===0) return;
     if (micListening) stopMic();
     _hidePanel();
-    const chatBox=document.getElementById("chat-box"); const messagePDFs=[];
+    const chatBox = document.getElementById("chat-box"); const messagePDFs = [];
     pendingPDFs.forEach(pdf=>{
         chatBox.appendChild(makePdfChip(pdf.name,pdf.url,false));
         messagePDFs.push({name:pdf.name,content:pdf.content,url:pdf.url});
@@ -1011,51 +1244,63 @@ async function sendMessage() {
     input.value=""; input.style.height="auto";
     pendingPDFs=[]; document.getElementById("selected-file").innerHTML="";
     scrollToBottom();
-    const ld=_makeLoader(); chatBox.appendChild(ld); scrollToBottom();
-    _S.mode = "chat";   
+    _S.mode = "chat"; // switch mode after first send
+
+    const ld = document.createElement("div"); ld.className="msg bot loading"; ld.innerHTML="<span></span><span></span><span></span>";
+    chatBox.appendChild(ld); scrollToBottom();
     try {
         const pdfContent=currentChatPDFs.map(p=>p.content).join("\n\n---\n\n");
         const history=currentChat.slice(0,-1).filter(m=>!m.vizType&&m.content).slice(-10).map(m=>({role:m.role,content:m.content}));
         const endpoint=isSharedView?"/shared/chat/"+sharedToken:"/chat";
-        const res=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},
+        const res=await _apiFetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},
             body:JSON.stringify({message:msg||"Summarize the uploaded PDF",pdf_text:pdfContent,
                 use_pdf:currentChatPDFs.length>0,conversation_history:history,
-                topic_lock:currentTopic||null})});   
+                topic_lock: currentTopic || null  // null = no restriction
+            })});
         if (!res.ok) { const err=await res.json().catch(()=>({})); throw new Error(err.detail||`Server error ${res.status}`); }
         const data=await res.json(); ld.remove();
         const replyHtml=data.reply||"<p>Sorry, no response received.</p>";
         const botMsg={role:"bot",content:replyHtml,msgId:_uid()};
-        const wrapper=document.createElement("div"); wrapper.className="msg bot"; wrapper.id=botMsg.msgId; chatBox.appendChild(wrapper);
+        const wrapper=document.createElement("div"); wrapper.className="msg bot"; wrapper.id=botMsg.msgId;
+        chatBox.appendChild(wrapper);
         typewriterAnimate(wrapper,replyHtml,()=>{
             currentChat.push(botMsg); wrapTables(wrapper); scrollToBottom();
             if (isSharedView) return;
             let tp=Promise.resolve(currentTitle);
             if (!currentTitle) {
-                tp=fetch("/generate_title",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg||"PDF Analysis"})})
+                tp=_apiFetch("/generate_title",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg||"PDF Analysis"})})
                     .then(r=>r.json()).then(td=>{currentTitle=td.title||"New Chat";return currentTitle;})
                     .catch(()=>{currentTitle="New Chat";return "New Chat";});
             }
-            tp.then(title=>{
-                fetch("/save_chat",{method:"POST",headers:{"Content-Type":"application/json"},
-                    body:JSON.stringify({id:currentChatId,title,messages:currentChat,
-                        pdfs:currentChatPDFs.map(p=>({name:p.name,content:p.content})),topic:currentTopic||null})
-                }).then(r=>r.json()).then(d=>{if(d.id)currentChatId=d.id;loadHistory();});
-            });
+            tp.then(()=>{ saveCurrentChat(); });
+            // Refresh continue chips after bot replies (ccList cleared = 1 fresh call)
+            _S.ccList  = [];
+            _S.chatCtx = "";
             _loadContinueChips();
         });
-    } catch(err) { ld.remove(); _appendError(err.message,chatBox); scrollToBottom(); }
+    } catch(err) {
+        ld.remove();
+        const ed=document.createElement("div"); ed.className="msg bot error";
+        ed.textContent="Error: "+err.message; chatBox.appendChild(ed); scrollToBottom();
+    }
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  THEME
+// ═══════════════════════════════════════════════════════════════
 function toggleTheme() {
     document.body.classList.toggle("light-mode");
-    document.getElementById("theme-btn").textContent = document.body.classList.contains("light-mode")?"☀️":"🌙";
-    localStorage.setItem("theme", document.body.classList.contains("light-mode")?"light":"dark");
+    document.getElementById("theme-btn").textContent=document.body.classList.contains("light-mode")?"☀️":"🌙";
+    localStorage.setItem("theme",document.body.classList.contains("light-mode")?"light":"dark");
 }
 
 window.onload = initAuth;
 
-
+// ═══════════════════════════════════════════════════════════════
+//  TABLE EXPORT
+// ═══════════════════════════════════════════════════════════════
 function wrapTables(container) {
+    if (!container) return;
     container.querySelectorAll("table").forEach(table => {
         if (table.closest(".table-container")) return;
         const containerDiv=document.createElement("div"); containerDiv.className="table-container";
@@ -1085,10 +1330,10 @@ function wrapTables(container) {
     });
 }
 function exportTable(table, format) {
-    const rows = Array.from(table.querySelectorAll("tr")).map(row=>Array.from(row.querySelectorAll("th,td")).map(cell=>cell.innerText.trim()));
+    const rows=Array.from(table.querySelectorAll("tr")).map(row=>Array.from(row.querySelectorAll("th,td")).map(cell=>cell.innerText.trim()));
     if (!rows.length) return;
-    const ts = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-    let content="", mimeType="", ext="";
+    const ts=new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
+    let content="",mimeType="",ext="";
     if (format==="csv") {
         content="\uFEFF"+rows.map(r=>r.map(c=>`"${c.replace(/"/g,'""')}"`).join(",")).join("\r\n");
         mimeType="text/csv;charset=utf-8;"; ext="csv";
@@ -1106,12 +1351,16 @@ function exportTable(table, format) {
     document.body.appendChild(a); a.click(); setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},200);
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  SCROLL BUTTON
+// ═══════════════════════════════════════════════════════════════
 const scrollBtn=document.getElementById("scrollBottomBtn"), chatBoxElement=document.getElementById("chat-box");
 if (chatBoxElement && scrollBtn) {
     chatBoxElement.addEventListener("scroll",()=>{
-        if (chatBoxElement.scrollHeight-chatBoxElement.scrollTop-chatBoxElement.clientHeight>100)
-            scrollBtn.classList.add("show");
-        else scrollBtn.classList.remove("show");
+        scrollBtn.classList.toggle("show",
+            chatBoxElement.scrollHeight - chatBoxElement.scrollTop - chatBoxElement.clientHeight > 100);
     });
 }
-function scrollToBottomSmooth() { if(chatBoxElement) chatBoxElement.scrollTo({top:chatBoxElement.scrollHeight,behavior:"smooth"}); }
+function scrollToBottomSmooth() {
+    if (chatBoxElement) chatBoxElement.scrollTo({top:chatBoxElement.scrollHeight,behavior:"smooth"});
+}

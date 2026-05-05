@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import re as _re
@@ -17,26 +18,118 @@ router    = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
 BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FILE_PATH  = os.path.join(BASE_DIR, "data", "chats.json")
+DATA_DIR   = os.path.join(BASE_DIR, "data")
 SHARE_PATH = os.path.join(BASE_DIR, "data", "shared_chats.json")
 
 CURRENT_PDF_TEXT = ""
 
+# ── Auth0 settings ────────────────────────────────────────────
+AUTH0_DOMAIN   = "dev-c3urwbeyfq7ld873.us.auth0.com"
+AUTH0_AUDIENCE = None          # set if you added an API audience in Auth0 dashboard
+_JWKS_CACHE    = None          # fetched once per process, reused on every request
 
-def load_chats():
-    if not os.path.exists(FILE_PATH):
+
+def _get_jwks() -> dict:
+    """Fetch and cache Auth0 JWKS (public keys) for JWT verification."""
+    global _JWKS_CACHE
+    if _JWKS_CACHE is not None:
+        return _JWKS_CACHE
+    try:
+        import requests as _req
+        resp = _req.get(
+            f"https://{AUTH0_DOMAIN}/.well-known/jwks.json", timeout=5
+        )
+        resp.raise_for_status()
+        _JWKS_CACHE = resp.json()
+    except Exception:
+        _JWKS_CACHE = {"keys": []}
+    return _JWKS_CACHE
+
+
+def _decode_jwt_sub(token: str) -> str:
+    """
+    Return the Auth0 'sub' claim from a JWT.
+    Tries verified RS256 decode first (python-jose + JWKS).
+    Falls back to unverified base64 decode so the app still works
+    if JWKS is temporarily unavailable.
+    """
+    # ── Attempt 1: verified decode via python-jose ──────────────
+    try:
+        from jose import jwt as _jwt, jwk as _jwk
+        jwks   = _get_jwks()
+        header = _jwt.get_unverified_header(token)
+        kid    = header.get("kid")
+        key    = None
+        for k in jwks.get("keys", []):
+            if k.get("kid") == kid:
+                key = _jwk.construct(k)
+                break
+        if key:
+            options = {"verify_exp": True, "verify_aud": bool(AUTH0_AUDIENCE)}
+            kwargs  = {"algorithms": ["RS256"], "options": options}
+            if AUTH0_AUDIENCE:
+                kwargs["audience"] = AUTH0_AUDIENCE
+            payload = _jwt.decode(token, key, **kwargs)
+            sub = payload.get("sub") or payload.get("email") or ""
+            if sub:
+                return sub
+    except Exception:
+        pass
+
+    # ── Attempt 2: unverified base64 decode (fallback) ──────────
+    try:
+        parts = token.split(".")
+        if len(parts) == 3:
+            padded  = parts[1] + "=" * (-len(parts[1]) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(padded))
+            sub = payload.get("sub") or payload.get("email") or ""
+            if sub:
+                return sub
+    except Exception:
+        pass
+
+    return ""
+
+
+def _user_file(user_id: str) -> str:
+    """Each user gets their own chats JSON file."""
+    safe = _re.sub(r"[^a-zA-Z0-9_\-]", "_", user_id)
+    return os.path.join(DATA_DIR, f"chats_{safe}.json")
+
+
+def _get_user_id(request: Request) -> str:
+    """
+    Extract user identity from the Authorization header (Auth0 JWT sub claim).
+    Falls back to X-User-Id header, then 'anonymous'.
+    """
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        token = auth[7:].strip()
+        if token:
+            uid = _decode_jwt_sub(token)
+            if uid:
+                return uid
+
+    uid = request.headers.get("X-User-Id", "").strip()
+    if uid:
+        return uid
+
+    return "anonymous"
+
+def load_chats(user_id: str = "anonymous"):
+    path = _user_file(user_id)
+    if not os.path.exists(path):
         return []
     try:
-        with open(FILE_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
             return data if isinstance(data, list) else []
     except Exception:
         return []
 
-
-def save_chats(chats):
-    os.makedirs(os.path.dirname(FILE_PATH), exist_ok=True)
-    with open(FILE_PATH, "w", encoding="utf-8") as f:
+def save_chats(chats: list, user_id: str = "anonymous"):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(_user_file(user_id), "w", encoding="utf-8") as f:
         json.dump(chats, f, indent=2, ensure_ascii=False)
 
 
@@ -90,7 +183,6 @@ def process_chat_request(data: dict):
     reply = call_gemini_api(final_prompt, conversation_history, topic_lock)
     return ChatResponse(reply=reply)
 
-
 @router.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: Request):
     try:
@@ -143,8 +235,9 @@ async def explain_viz(request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/chats")
-def get_chats():
-    chats = load_chats()
+def get_chats(request: Request):
+    uid = _get_user_id(request)
+    chats = load_chats(uid)
     summary = []
     for c in chats:
         summary.append({
@@ -159,8 +252,9 @@ def get_chats():
 
 
 @router.get("/chat/{chat_id}")
-def get_chat(chat_id: int):
-    chats = load_chats()
+def get_chat(chat_id: int, request: Request):
+    uid = _get_user_id(request)
+    chats = load_chats(uid)
     for c in chats:
         if c.get("id") == chat_id:
             return c
@@ -171,7 +265,8 @@ def get_chat(chat_id: int):
 async def save_chat(request: Request):
     try:
         data    = await request.json()
-        chats   = load_chats()
+        uid     = _get_user_id(request)
+        chats   = load_chats(uid)
         chat_id = data.get("id")
         title   = data.get("title", "").strip() or f"Chat {len(chats)+1}"
         pdfs    = data.get("pdfs", [])
@@ -199,10 +294,10 @@ async def save_chat(request: Request):
 
         if not found:
             chat_id = max((c.get("id",0) for c in chats), default=0) + 1
-            chats.append({"id":chat_id,"title":title,"messages":formatted,"pdfs":pdfs,"topic":topic,
+            chats.append({"id":chat_id,"user_id":uid,"title":title,"messages":formatted,"pdfs":pdfs,"topic":topic,
                           "is_shared":False,"is_pinned":False,"share_id":None,"original_index":len(chats)})
 
-        save_chats(chats)
+        save_chats(chats, uid)
         return {"status":"saved","id":chat_id,"title":title}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -212,7 +307,8 @@ async def save_chat(request: Request):
 async def patch_chat(chat_id: int, request: Request):
     try:
         data  = await request.json()
-        chats = load_chats()
+        uid   = _get_user_id(request)
+        chats = load_chats(uid)
         for c in chats:
             if c.get("id") == chat_id:
                 if "title" in data:
@@ -225,7 +321,7 @@ async def patch_chat(chat_id: int, request: Request):
                     if data["is_pinned"] and not c.get("is_pinned") and "original_index" not in c:
                         c["original_index"] = next((i for i,x in enumerate(chats) if x.get("id")==chat_id),0)
                     c["is_pinned"] = data["is_pinned"]
-                save_chats(chats)
+                save_chats(chats, uid)
                 return {"status":"updated","chat":c}
         raise HTTPException(status_code=404, detail="Chat not found")
     except HTTPException:
@@ -235,30 +331,34 @@ async def patch_chat(chat_id: int, request: Request):
 
 
 @router.delete("/chat/{chat_id}")
-async def delete_chat(chat_id: int):
-    chats = load_chats()
+async def delete_chat(chat_id: int, request: Request):
+    uid   = _get_user_id(request)
+    chats = load_chats(uid)
     before = len(chats)
     chats  = [c for c in chats if c.get("id") != chat_id]
     if len(chats) == before:
         raise HTTPException(status_code=404, detail="Chat not found")
-    save_chats(chats); return {"status":"deleted"}
+    save_chats(chats, uid)
+    return {"status":"deleted"}
 
 @router.post("/share/{chat_id}")
-async def share_chat(chat_id: int):
-    chats = load_chats()
+async def share_chat(chat_id: int, request: Request):
+    uid   = _get_user_id(request)
+    chats = load_chats(uid)
     for c in chats:
         if c.get("id") == chat_id:
             if not c.get("share_id"): c["share_id"] = uuid.uuid4().hex
-            c["is_shared"] = True; save_chats(chats)
+            c["is_shared"] = True; save_chats(chats, uid)
             return {"status":"success","is_shared":True,"share_id":c["share_id"]}
     raise HTTPException(status_code=404, detail="Chat not found")
 
 @router.post("/unshare/{chat_id}")
-async def unshare_chat(chat_id: int):
-    chats = load_chats()
+async def unshare_chat(chat_id: int, request: Request):
+    uid   = _get_user_id(request)
+    chats = load_chats(uid)
     for c in chats:
         if c.get("id") == chat_id:
-            c["is_shared"] = False; save_chats(chats)
+            c["is_shared"] = False; save_chats(chats, uid)
             return {"status":"success","is_shared":False}
     raise HTTPException(status_code=404, detail="Chat not found")
 
@@ -268,15 +368,32 @@ async def get_shared_html(request: Request, share_id: str):
 
 @router.get("/api/shared/{share_id}")
 async def get_shared_data(share_id: str):
-    chats = load_chats()
-    for c in chats:
-        if c.get("share_id") == share_id and c.get("is_shared"): return c
+    # Shared chat endpoint needs to search all users if not using a central DB
+    if not os.path.exists(DATA_DIR):
+        raise HTTPException(status_code=404, detail="Shared chat not found")
+    for fname in os.listdir(DATA_DIR):
+        if not fname.startswith("chats_") or not fname.endswith(".json"): continue
+        try:
+            with open(os.path.join(DATA_DIR, fname), "r", encoding="utf-8") as f:
+                user_chats = json.load(f)
+            for c in (user_chats if isinstance(user_chats, list) else []):
+                if c.get("share_id") == share_id and c.get("is_shared"): return c
+        except Exception: continue
     raise HTTPException(status_code=404, detail="Shared chat not found")
 
 @router.post("/shared/chat/{share_id}", response_model=ChatResponse)
 async def shared_chat_endpoint(request: Request, share_id: str):
-    chats = load_chats()
-    if not any(c.get("share_id")==share_id and c.get("is_shared") for c in chats):
+    valid = False
+    if os.path.exists(DATA_DIR):
+        for fname in os.listdir(DATA_DIR):
+            if not fname.startswith("chats_") or not fname.endswith(".json"): continue
+            try:
+                with open(os.path.join(DATA_DIR, fname), "r", encoding="utf-8") as f:
+                    user_chats = json.load(f)
+                if any(c.get("share_id")==share_id and c.get("is_shared") for c in (user_chats if isinstance(user_chats, list) else [])):
+                    valid = True; break
+            except Exception: continue
+    if not valid:
         raise HTTPException(status_code=404, detail="Invalid or inactive share ID")
     try:
         return process_chat_request(await request.json())
@@ -308,9 +425,10 @@ async def suggest(request: Request):
         query    = data.get("query","").strip()
         new_chat = data.get("new_chat", False)
         context  = data.get("context","").strip()
+        uid      = _get_user_id(request)
 
         if new_chat and not query:
-            chats = load_chats()
+            chats = load_chats(uid)
             past  = []
             for chat in chats[-20:]:
                 for msg in chat.get("messages",[]):
@@ -322,23 +440,23 @@ async def suggest(request: Request):
             if past:
                 sample = "\n".join(f"- {m[:120]}" for m in past)
                 prompt = (
-                    "Based on this user's past questions, generate 3 short follow-up "
+                    "Based on this user's past questions, generate 6 short follow-up "
                     "questions they are likely to ask next. Each 6-10 words. "
-                    "Relevant to their interests, varied.\n\n"
+                    "Relevant to their interests, varied, completely UNIQUE.\n\n"
                     f"Past questions:\n{sample}\n\n"
                     "Return ONLY a JSON array, no markdown:\n"
-                    '["question 1","question 2","question 3"]'
+                    '["question 1","question 2","question 3","question 4","question 5","question 6"]'
                 )
             else:
-                return {"suggestions": []}
+                prompt = "" # Will trigger fallback below
 
         elif not query and context:
             prompt = (
                 f'The first message in this chat was: "{context[:300]}"\n\n'
-                "Generate 3 short follow-up questions the user might ask next, "
-                "directly related to this topic. Each 5-10 words. Varied, specific. "
+                "Generate 6 short follow-up questions the user might ask next, "
+                "directly related to this topic. Each 5-10 words. Varied, specific, completely UNIQUE. "
                 "Return ONLY a JSON array, no markdown:\n"
-                '["question 1","question 2","question 3"]'
+                '["question 1","question 2","question 3","question 4","question 5","question 6"]'
             )
 
         elif not query:
@@ -349,32 +467,80 @@ async def suggest(request: Request):
             if len(words) == 1:
                 prompt = (
                     f'User typed the word: "{query}"\n'
-                    f'Generate 3 questions/phrases that START with "{query}". '
-                    "Each 5-10 words. Cover different topics. Varied, no repetition. "
+                    f'Generate 6 questions/phrases that START with "{query}". '
+                    "Each 5-10 words. Cover different topics. Varied, no repetition, completely UNIQUE. "
                     "Return ONLY a JSON array, no markdown:\n"
-                    '["completion 1","completion 2","completion 3"]'
+                    '["completion 1","completion 2","completion 3","completion 4","completion 5","completion 6"]'
                 )
             else:
                 prompt = (
                     f'User is typing: "{query}"\n'
-                    f'Generate 3 natural completions that continue EXACTLY from "{query}". '
+                    f'Generate 6 natural completions that continue EXACTLY from "{query}". '
                     "Each must start with the exact typed text. "
-                    "5-12 words total. Specific, varied. "
+                    "5-12 words total. Specific, varied, completely UNIQUE. "
                     "Return ONLY a JSON array, no markdown:\n"
-                    '["completion 1","completion 2","completion 3"]'
+                    '["completion 1","completion 2","completion 3","completion 4","completion 5","completion 6"]'
                 )
 
-        raw    = call_gemini_api(prompt)
-        result = [s.strip() for s in _clean_json(raw) if isinstance(s,str)]
+        if prompt:
+            raw    = call_gemini_api(prompt)
+            result = [s.strip() for s in _clean_json(raw) if isinstance(s,str)]
+        else:
+            result = []
 
         if query:
             prefixed = [s for s in result if s.lower().startswith(query.lower())]
             result   = prefixed if len(prefixed) >= 2 else result
 
-        return {"suggestions": result[:3]}
+        # Ensure EXACTLY 3 unique suggestions
+        unique_result = []
+        seen = set()
+        for r in result:
+            low = r.lower().strip()
+            if low not in seen:
+                seen.add(low)
+                unique_result.append(r)
+                if len(unique_result) == 3:
+                    break
+
+        # Fallback defaults ONLY for new_chat or empty results
+        if (new_chat and not query) or len(unique_result) < 3:
+            import random
+            all_defaults = [
+                "What can you help me with today?",
+                "Can you explain a complex topic simply?",
+                "How do I get started with coding?",
+                "What are the best practices for software architecture?",
+                "Help me brainstorm some new ideas.",
+                "Explain the difference between AI and machine learning.",
+                "What is the best way to learn a new programming language?",
+                "Can you summarize a topic for me?",
+                "What are some productivity tips for developers?",
+                "How does the internet actually work?",
+            ]
+            random.shuffle(all_defaults)
+            for d in all_defaults:
+                if d.lower() not in seen:
+                    seen.add(d.lower())
+                    unique_result.append(d)
+                    if len(unique_result) == 3:
+                        break
+
+        return {"suggestions": unique_result}
 
     except Exception:
-        return {"suggestions": []}
+        import random
+        _fb = [
+            "What can you help me with today?",
+            "Can you explain a complex topic simply?",
+            "How do I get started with coding?",
+            "What are the best practices for software architecture?",
+            "Help me brainstorm some new ideas.",
+            "Explain the difference between AI and machine learning.",
+            "What is the best way to learn a new programming language?",
+        ]
+        random.shuffle(_fb)
+        return {"suggestions": _fb[:3]}
 
 @router.post("/upload_pdf")
 async def upload_pdf(file: UploadFile = File(...)):

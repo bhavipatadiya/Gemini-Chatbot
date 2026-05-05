@@ -6,12 +6,17 @@ import markdown
 import time
 import re
 
+# load_dotenv() reads .env locally; on Render the env var is set in the dashboard
 load_dotenv()
 
-API_KEY = os.getenv("GEMINI_API_KEY")
+API_KEY = os.getenv("GEMINI_API_KEY", "")
+if not API_KEY:
+    raise RuntimeError("GEMINI_API_KEY environment variable is not set.")
+
 genai.configure(api_key=API_KEY)
-PRIMARY_MODEL = "models/gemma-3-1b-it"
-FALLBACK_MODEL = "gemini-1.5-flash"
+
+PRIMARY_MODEL  = "gemini-1.5-flash"
+FALLBACK_MODEL = "gemini-1.5-pro"
 
 try:
     model = genai.GenerativeModel(PRIMARY_MODEL)
@@ -108,7 +113,6 @@ STRICT RESPONSE RULES — follow exactly:
     - Do NOT repeat the question.
     - Do NOT produce markdown tables.
     - Keep responses clean, direct, and human-like.
-═══════════════════════════════════════════════════════
 """
         return _call_with_retry(prompt, as_html=True)
 
@@ -199,13 +203,11 @@ def extract_table_from_html(html_content: str, chat_text: str) -> dict:
                 "source":  "html_table"
             }
 
-        
         plain = _strip_html(html_content)
         return _ask_gemini_for_table(plain or chat_text)
 
     except Exception:
         return _ask_gemini_for_table(chat_text)
-
 
 def _ask_gemini_for_table(text: str) -> dict:
     """Ask Gemini to convert text content into a structured table."""
@@ -276,7 +278,6 @@ Rules:
             "source":  "fallback"
         }
 
-
 def extract_chart_data(chat_text: str) -> dict:
     try:
         prompt = f"""You are a data extraction assistant.
@@ -338,7 +339,6 @@ Rules:
             "rows":    [["A","40"],["B","70"],["C","55"],["D","85"]]
         }
 
-
 def generate_viz_explanation(viz_type: str, chart_type: str,
                               labels: list, values: list,
                               xLabel: str, yLabel: str,
@@ -384,8 +384,7 @@ Rules:
 - Be specific about actual values/items from the data
 - No markdown, no code fences, just HTML
 """
-        result = _call_with_retry(prompt, as_html=False).strip()
-       
+        result = _call_with_retry(prompt, as_html=False).strip()       
         result = re.sub(r"^```html?\s*", "", result)
         result = re.sub(r"\s*```$",      "", result).strip()
         return result if result.startswith("<") else f"<p>{result}</p>"
@@ -393,10 +392,8 @@ Rules:
     except Exception:
         return "<p>Could not generate explanation for this visualization.</p>"
 
-
 def _strip_html(html: str) -> str:
     return re.sub(r"<[^>]+>", " ", html).strip()
-
 
 def _call_with_retry(prompt: str, as_html: bool = True) -> str:
     max_retries = 3
