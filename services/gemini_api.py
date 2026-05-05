@@ -15,8 +15,8 @@ if not API_KEY:
 
 genai.configure(api_key=API_KEY)
 
-PRIMARY_MODEL  = "gemini-1.5-flash"
-FALLBACK_MODEL = "gemini-1.5-pro"
+PRIMARY_MODEL  = "models/gemma-3-1b-it"
+FALLBACK_MODEL = "gemini-1.5-flash"
 
 try:
     model = genai.GenerativeModel(PRIMARY_MODEL)
