@@ -1,6 +1,3 @@
-// ═══════════════════════════════════════════════════════════════
-//  AUTH  (Auth0)
-// ═══════════════════════════════════════════════════════════════
 const AUTH0_DOMAIN    = "dev-c3urwbeyfq7ld873.us.auth0.com";
 const AUTH0_CLIENT_ID = "nvQtTELKBfNnZRiVavXhrhU50lCnizrT";
 const AUTH0_REDIRECT  = window.location.origin + "/callback";
@@ -8,7 +5,7 @@ let auth0Client = null, isSharedView = false, sharedToken = null;
 let _currentUserId = null;
 
 async function initAuth() {
-    // Shared chat view — skip auth entirely
+   
     const match = window.location.pathname.match(/^\/shared\/([^\/]+)/);
     if (match) { sharedToken = match[1]; isSharedView = true; showApp(); return; }
 
@@ -21,7 +18,7 @@ async function initAuth() {
             useRefreshTokens: true
         });
 
-        // Handle Auth0 redirect callback — runs when Auth0 sends user back with code+state
+        
         if (window.location.pathname === "/callback" &&
             window.location.search.includes("code=") &&
             window.location.search.includes("state=")) {
@@ -35,12 +32,12 @@ async function initAuth() {
 
         const ok = await auth0Client.isAuthenticated();
         if (ok) {
-            showApp();   // already logged in → go to chatbot
+            showApp();   
         } else {
-            showLoginScreen();  // not logged in → show login screen
+            showLoginScreen();  
         }
     } catch(e) {
-        // If Auth0 SDK fails to load, still show the login screen
+
         console.error("Auth0 init error:", e);
         showLoginScreen();
     }
@@ -77,7 +74,7 @@ function showApp() {
 document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("login-btn").addEventListener("click", async () => {
         if (!auth0Client) {
-            // Re-init if auth0Client failed earlier
+            
             await initAuth();
             return;
         }
@@ -89,9 +86,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 });
 
-// ═══════════════════════════════════════════════════════════════
-//  PDF STORE
-// ═══════════════════════════════════════════════════════════════
 const PDF_STORE_KEY = "pdfBinStore";
 function savePDFToStore(name, b64) {
     try {
@@ -115,52 +109,34 @@ function getBlobUrl(name) {
 function clearPDFStore() { localStorage.removeItem(PDF_STORE_KEY); }
 function resolveUrl(name, live) { return live || getBlobUrl(name); }
 
-// ═══════════════════════════════════════════════════════════════
-//  CHART CONFIG
-// ═══════════════════════════════════════════════════════════════
+
 const CHART_COLORS = ["#19c37d","#3b82f6","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#f97316","#84cc16","#ec4899","#14b8a6","#a78bfa","#fb923c"];
 const CHART_NAMES  = { bar:"Bar Chart", line:"Line Chart", pie:"Pie Chart", doughnut:"Doughnut Chart", radar:"Radar Chart" };
 const chartRegistry = {};
 
-// ═══════════════════════════════════════════════════════════════
-//  APP STATE
-// ═══════════════════════════════════════════════════════════════
+
 let chats = [], currentChat = [], currentTitle = null, currentChatId = null;
 let currentChatPDFs = [], pendingPDFs = [], currentTopic = null;
 
-// ═══════════════════════════════════════════════════════════════
-//  SUGGESTION ENGINE
-//  ─────────────────────────────────────────────────────────────
-//  RULES to minimize API calls (target: max 2-3 per interaction):
-//
-//  1. NEW CHAT focus     → 1 call total (pre-fetched once, reused)
-//  2. TYPING             → 1 call per word (150ms debounce, abort stale)
-//                          cache hit = 0 calls
-//  3. CONTINUE CHAT      → 1 call (after bot reply, result cached in _S.ccList)
-//                          focus reuses ccList = 0 calls
-//
-//  The panel is positioned ABSOLUTE inside .textarea-wrapper,
-//  shown ABOVE the textarea with z-index.
-// ═══════════════════════════════════════════════════════════════
 
 const _S = {
     debounce:   null,
     abort:      null,
     lastQuery:  null,
-    // session-level cache: persists across focus events
+    
     cache:      {},
 
-    ncReady:    false,  // new-chat pre-fetch done
-    ncList:     [],     // new-chat suggestions (reused, 0 extra calls on re-focus)
+    ncReady:    false, 
+    ncList:     [],     
     ncFetching: false,
 
-    chatCtx:    "",     // first-user-message context
-    ccList:     [],     // continue-chat suggestions (reused on re-focus)
+    chatCtx:    "",     
+    ccList:     [],     
 
-    mode:       "new",  // "new" | "chat"
+    mode:       "new",  
 };
 
-// ── CSS (injected once) ────────────────────────────────────────
+
 (function _injectCSS() {
     if (document.getElementById("_sg_style")) return;
     const s = document.createElement("style"); s.id = "_sg_style";
@@ -244,7 +220,7 @@ const _S = {
     document.head.appendChild(s);
 })();
 
-// ── Panel DOM helpers ──────────────────────────────────────────
+
 function _getPanel() {
     let p = document.getElementById("sg-panel");
     if (!p) {
@@ -252,7 +228,7 @@ function _getPanel() {
         const wrap = document.querySelector(".textarea-wrapper");
         if (wrap) {
             wrap.style.position = "relative";
-            wrap.appendChild(p);  // append inside .textarea-wrapper
+            wrap.appendChild(p);  
         }
     }
     return p;
@@ -292,7 +268,7 @@ function _showPanel(list) {
                 autoResize(ta);
             }
             _hidePanel();
-            // Auto-send the suggestion as a message immediately
+       
             sendMessage();
         });
         panel.appendChild(btn);
@@ -310,8 +286,7 @@ function _hidePanel() {
 
 function _esc(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
-// ── New-chat suggestions: show 3 defaults immediately, then replace with
-//    personalised ones from the API in the background ──────────────────
+
 const _DEFAULT_SUGGESTIONS = [
     "What can you help me with today?",
     "How do I get started with coding?",
@@ -328,7 +303,7 @@ const _DEFAULT_SUGGESTIONS = [
 async function _prefetchNewChat() {
     if (_S.ncFetching) return;
 
-    // Show 3 random defaults IMMEDIATELY — no waiting for API
+    
     if (!_S.ncReady) {
         const shuffled = [..._DEFAULT_SUGGESTIONS].sort(() => Math.random() - 0.5);
         _S.ncList  = shuffled.slice(0, 3);
@@ -337,7 +312,7 @@ async function _prefetchNewChat() {
         if (ta && !ta.value.trim() && _S.mode === "new") _showPanel(_S.ncList);
     }
 
-    // Then fetch personalised suggestions from API in background
+    
     _S.ncFetching = true;
     try {
         const r = await _apiFetch("/suggest", {
@@ -349,7 +324,7 @@ async function _prefetchNewChat() {
         const d    = await r.json();
         const list = Array.isArray(d.suggestions) ? d.suggestions.slice(0,3) : [];
         if (list.length) {
-            _S.ncList = list;  // replace defaults with personalised
+            _S.ncList = list; 
             const ta = document.getElementById("user-input");
             if (ta && !ta.value.trim() && _S.mode === "new") _showPanel(list);
         }
@@ -357,7 +332,7 @@ async function _prefetchNewChat() {
     finally { _S.ncFetching = false; }
 }
 
-// ── Typing suggestions — debounced 400ms, fires only on full words ──
+
 function _scheduleFetch(query, delay) {
     clearTimeout(_S.debounce);
     if (_S.abort) { _S.abort.abort(); _S.abort = null; }
@@ -388,15 +363,13 @@ async function _fetchSugg(query) {
     } catch(e) { /* AbortError — silent */ }
 }
 
-// ── Continue-chat: use last 3–5 messages of THIS chat as context ──
-//    ccList is cleared after every bot reply so suggestions stay fresh
 async function _loadContinueChips() {
     if (_S.ccList.length) {
         const ta = document.getElementById("user-input");
         if (ta && !ta.value.trim()) _showPanel(_S.ccList);
         return;
     }
-    // Build context from last 3–5 messages of the current chat
+  
     const recent = currentChat
         .filter(m => m.content && m.content !== "[PDF uploaded]")
         .slice(-5)
@@ -414,13 +387,12 @@ async function _loadContinueChips() {
         const d    = await r.json();
         const list = Array.isArray(d.suggestions) ? d.suggestions.slice(0,3) : [];
         if (!list.length) return;
-        _S.ccList = list;  // cached for this chat — cleared on next bot reply
+        _S.ccList = list;  
         const ta  = document.getElementById("user-input");
         if (ta && !ta.value.trim()) _showPanel(list);
     } catch(e) {}
 }
 
-// ── Event wiring ─────────────────────────────────────────────────
 function _initSuggestions() {
     const ta = document.getElementById("user-input"); if (!ta) return;
 
@@ -440,8 +412,7 @@ function _initSuggestions() {
         _scheduleFetch(q, 0);
     });
 
-    // INPUT: only fire suggestion fetch after a complete word (space typed)
-    // or after 400ms idle — NOT on every keystroke
+
     ta.addEventListener("input", () => {
         const q = ta.value.trim();
         autoResize(ta);
@@ -452,7 +423,7 @@ function _initSuggestions() {
             return;
         }
         if (_S.cache[q]) { _showPanel(_S.cache[q]); return; }
-        // Only fetch after user finishes a word (ends with space) or 400ms idle
+        
         const endsWithSpace = ta.value.endsWith(" ");
         _scheduleFetch(q, endsWithSpace ? 0 : 400);
     });
@@ -496,10 +467,7 @@ function _resetSugg(mode = "new") {
     _S.mode      = mode;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  INIT APP
-// ═══════════════════════════════════════════════════════════════
-let _appInitDone = false; // guard against double-init within the same page load
+let _appInitDone = false; 
 
 function initApp() {
     if (isSharedView) {
@@ -510,9 +478,6 @@ function initApp() {
         return;
     }
 
-    // Guarantee a clean empty chat on every login.
-    // State is reset here; suggestions are NOT pre-fetched yet —
-    // we wait until history is loaded so suggestions have real context.
     _resetSugg("new");
     currentChatId = null; currentTitle = null; currentChat = [];
     currentChatPDFs = []; pendingPDFs = []; currentTopic = null;
@@ -525,7 +490,7 @@ function initApp() {
         document.getElementById("theme-btn").textContent = "☀️";
     }
 
-    // Wire up listeners exactly once per page load
+
     if (!_appInitDone) {
         _appInitDone = true;
         const ta = document.getElementById("user-input");
@@ -536,8 +501,6 @@ function initApp() {
         _initSuggestions();
     }
 
-    // Load history first, THEN prefetch suggestions with real chat context.
-    // This ensures suggestions are personalised, not the same defaults every time.
     loadHistory().then(() => {
         _prefetchNewChat();
     });
@@ -546,7 +509,7 @@ function initApp() {
 function cleanText(t) { return t.replace(/<[^>]*>/g, ""); }
 function _uid()       { return "bot-" + Date.now() + "-" + Math.floor(Math.random()*9999); }
 
-// ChatGPT-style auto-resize textarea
+
 function autoResize(el) {
     if (!el) return;
     el.style.height = "auto";
@@ -554,9 +517,6 @@ function autoResize(el) {
     el.style.height = Math.min(el.scrollHeight, maxH) + "px";
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  TYPEWRITER
-// ═══════════════════════════════════════════════════════════════
 function typewriterAnimate(container, html, onDone) {
     const tokens = []; const temp = document.createElement("div"); temp.innerHTML = html;
     function walk(node) {
@@ -602,9 +562,6 @@ function typewriterAnimate(container, html, onDone) {
     }, 8);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  MIC / VOICE  — improved for slow speakers
-// ═══════════════════════════════════════════════════════════════
 let recognition = null, micListening = false, micFinalText = "";
 let audioCtx = null, analyser = null, audioSource = null, audioStream = null, waveRAF = null;
 
@@ -615,7 +572,7 @@ function initMic() {
     recognition = new SR();
     recognition.continuous      = true;
     recognition.interimResults  = true;
-    recognition.maxAlternatives = 3;    // more choices = better accuracy for slow speech
+    recognition.maxAlternatives = 3;    
     recognition.lang            = "en-US";
 
     recognition.onresult = function(event) {
@@ -631,7 +588,7 @@ function initMic() {
         if (ev.error === "no-speech" || ev.error === "aborted") return;
         if (ev.error === "not-allowed") { showUploadError("Microphone permission denied."); stopMic(); }
     };
-    // Auto-restart keeps continuous mode alive for slow speakers
+
     recognition.onend = function() {
         if (micListening) {
             const ta = document.getElementById("user-input");
@@ -700,9 +657,7 @@ function stopWave() {
     audioCtx = analyser = audioSource = audioStream = null;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  DROPDOWNS
-// ═══════════════════════════════════════════════════════════════
+
 function toggleVizDropdown(e) {
     e.stopPropagation();
     const menu = document.getElementById("viz-dropdown-menu"), btn = document.getElementById("viz-dropdown-btn");
@@ -726,9 +681,7 @@ document.addEventListener("click", e => {
         document.querySelectorAll(".export-dropdown").forEach(d => d.classList.remove("show"));
 });
 
-// ═══════════════════════════════════════════════════════════════
-//  TOPIC
-// ═══════════════════════════════════════════════════════════════
+
 function openTopicModal() {
     document.getElementById("topic-modal-overlay").classList.add("show");
     document.getElementById("topic-input").value = currentTopic || "";
@@ -751,7 +704,7 @@ function clearTopic() {
     document.getElementById("topic-input").value = ""; updateTopicActiveRow();
     document.getElementById("topic-modal-overlay").classList.remove("show");
     updateTopicUI(); removeTopicBanner(); saveCurrentChat();
-    // FIX: no error on next message — topic_lock will be null
+
 }
 function updateTopicUI() {
     const btn = document.getElementById("topic-lock-btn"), label = document.getElementById("topic-lock-label");
@@ -774,9 +727,6 @@ function showTopicBanner() {
 }
 function removeTopicBanner() { const old = document.getElementById("topic-banner"); if (old) old.remove(); }
 
-// ═══════════════════════════════════════════════════════════════
-//  SHARE
-// ═══════════════════════════════════════════════════════════════
 async function toggleShare() {
     if (!currentChatId) { showUploadError("Start a chat first before sharing."); return; }
     const btnText = document.getElementById("share-btn-text");
@@ -812,9 +762,6 @@ function closeShareModal(e) {
     document.getElementById("share-modal-overlay").classList.remove("show");
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  MESSAGES  — shared helper reduces duplication
-// ═══════════════════════════════════════════════════════════════
 function _makeEditBtn(wrapper, text, msgIndex) {
     const btn = document.createElement("button"); btn.className = "msg-edit-btn"; btn.title = "Edit";
     btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`;
@@ -881,7 +828,6 @@ function renderBotMessage(msg, container) {
     }
 }
 
-// ── Shared send helper (used by both send + edit) ───────────────
 async function _sendAndAppend(msg, chatBox, isEdit = false) {
     const ld = document.createElement("div"); ld.className = "msg bot loading"; ld.innerHTML = "<span></span><span></span><span></span>";
     chatBox.appendChild(ld); scrollToBottom();
@@ -895,7 +841,7 @@ async function _sendAndAppend(msg, chatBox, isEdit = false) {
                 message: msg, pdf_text: pdfContent,
                 use_pdf: currentChatPDFs.length > 0,
                 conversation_history: history,
-                topic_lock: currentTopic || null   // null = no restriction
+                topic_lock: currentTopic || null  
             })
         });
         if (!res.ok) { const err = await res.json().catch(()=>({})); throw new Error(err.detail||`Server error ${res.status}`); }
@@ -908,7 +854,6 @@ async function _sendAndAppend(msg, chatBox, isEdit = false) {
             currentChat.push(botMsg); wrapTables(wrapper); scrollToBottom();
             if (isSharedView) return;
             saveCurrentChat();
-            // Reset ccList so next focus re-fetches based on NEW context
             _S.ccList  = [];
             _S.chatCtx = "";
             _loadContinueChips();
@@ -920,9 +865,7 @@ async function _sendAndAppend(msg, chatBox, isEdit = false) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  VISUALIZATION
-// ═══════════════════════════════════════════════════════════════
+
 async function requestVisualization(viewType, chartType) {
     closeAllDropdowns();
     const botMsgs = currentChat.filter(m => m.role==="bot" && !m.vizType);
@@ -937,7 +880,7 @@ async function requestVisualization(viewType, chartType) {
         const chatText    = currentChat.filter(m=>m.role==="bot"&&!m.vizType)
             .map(m=>{const d=document.createElement("div");d.innerHTML=m.content||"";return d.textContent;}).join("\n\n");
         const htmlContent = viewType==="table" ? (lastBot.content||"") : "";
-        // Single API call — extract_viz now returns explanation too
+        
         const res = await _apiFetch("/extract_viz", {
             method:"POST", headers:{"Content-Type":"application/json"},
             body: JSON.stringify({ viz_type:viewType, html_content:htmlContent, chat_text:chatText, chart_type:chartType||"bar" })
@@ -952,7 +895,7 @@ async function requestVisualization(viewType, chartType) {
         renderVizSection(vizSection, viewType, chartType, extracted);
         wrapTables(vizSection);
 
-        // Explanation is now returned in the same response (no extra API call)
+        
         if (extracted.explanation) {
             lastBot.viz_explanation = extracted.explanation;
             const expDiv = document.createElement("div"); expDiv.className = "viz-explanation";
@@ -1010,12 +953,9 @@ function renderChart(container, chartType, data) {
     });
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  SAVE / HISTORY  — optimised, lazy load, no duplicate calls
-// ═══════════════════════════════════════════════════════════════
 let _historyFetching = false;
 
-// Update the in-memory chats array after a save — avoids a full re-fetch
+
 function _updateLocalChat(id, title, topic, pdfs) {
     const existing = chats.find(c => c.id === id);
     if (existing) {
@@ -1043,7 +983,7 @@ function saveCurrentChat() {
     }).then(r=>r.json()).then(data=>{
         if (data.id) {
             currentChatId = data.id;
-            // Update sidebar in-memory — NO extra /chats fetch
+           
             _updateLocalChat(data.id, data.title || currentTitle, currentTopic || null,
                 currentChatPDFs.map(p=>({name:p.name})));
         }
@@ -1057,7 +997,7 @@ function newChat() {
     document.getElementById("selected-file").innerHTML="";
     closePdfPreview(); if(micListening) stopMic(); updateTopicUI();
     _resetSugg("new");
-    _prefetchNewChat();  // immediately start pre-fetching for this new blank chat
+    _prefetchNewChat();  
 }
 
 async function loadHistory() {
@@ -1109,7 +1049,6 @@ function togglePinned(e) {
     box.classList.add("show");
 }
 
-// FIX: pin → top; unpin → original position
 async function togglePin(id) {
     const numId = Number(id); const chat = chats.find(c=>Number(c.id)===numId); if (!chat) return;
     const ns = !chat.is_pinned;
@@ -1143,9 +1082,7 @@ async function saveRename(id) {
     } catch(e) { alert("Failed to rename."); updateHistory(); }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  PDF
-// ═══════════════════════════════════════════════════════════════
+
 function toggleFileMenu(e) { e.stopPropagation(); document.getElementById("file-menu").classList.toggle("show"); }
 async function handlePDF(e) {
     const file = e.target.files[0]; if (!file) return;
@@ -1214,9 +1151,6 @@ function closePdfPreview() {
     document.getElementById("pdf-frame").src = "";
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  LOAD CHAT  — lazy load messages on demand (fast page load)
-// ═══════════════════════════════════════════════════════════════
 async function loadChat(id) {
     const meta = chats.find(c=>c.id===id); if (!meta) return;
     _resetSugg("chat");
@@ -1259,15 +1193,12 @@ async function loadSharedChatView() {
             if (msg.role==="bot") renderBotMessage(msg,chatBox); else renderUserMessage(msg.content||"",idx,chatBox);
         });
         wrapTables(chatBox); scrollToBottom();
-        _loadContinueChips();  // suggestions in shared chat too
+        _loadContinueChips(); 
     } catch(e) { document.getElementById("chat-box").innerHTML="<div class='msg bot error'>Error loading chat.</div>"; }
 }
 
 function scrollToBottom() { const cb=document.getElementById("chat-box"); if(cb) cb.scrollTop=cb.scrollHeight; }
 
-// ═══════════════════════════════════════════════════════════════
-//  SEND MESSAGE
-// ═══════════════════════════════════════════════════════════════
 async function sendMessage() {
     const input = document.getElementById("user-input"); const msg = input.value.trim();
     if (!msg && pendingPDFs.length===0) return;
@@ -1285,7 +1216,7 @@ async function sendMessage() {
     input.value=""; input.style.height="auto";
     pendingPDFs=[]; document.getElementById("selected-file").innerHTML="";
     scrollToBottom();
-    _S.mode = "chat"; // switch mode after first send
+    _S.mode = "chat"; 
 
     const ld = document.createElement("div"); ld.className="msg bot loading"; ld.innerHTML="<span></span><span></span><span></span>";
     chatBox.appendChild(ld); scrollToBottom();
@@ -1296,7 +1227,7 @@ async function sendMessage() {
         const res=await _apiFetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},
             body:JSON.stringify({message:msg||"Summarize the uploaded PDF",pdf_text:pdfContent,
                 use_pdf:currentChatPDFs.length>0,conversation_history:history,
-                topic_lock: currentTopic || null  // null = no restriction
+                topic_lock: currentTopic || null  
             })});
         if (!res.ok) { const err=await res.json().catch(()=>({})); throw new Error(err.detail||`Server error ${res.status}`); }
         const data=await res.json(); ld.remove();
@@ -1314,7 +1245,7 @@ async function sendMessage() {
                     .catch(()=>{currentTitle="New Chat";return "New Chat";});
             }
             tp.then(()=>{ saveCurrentChat(); });
-            // Refresh continue chips after bot replies (ccList cleared = 1 fresh call)
+            
             _S.ccList  = [];
             _S.chatCtx = "";
             _loadContinueChips();
@@ -1326,9 +1257,6 @@ async function sendMessage() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  THEME
-// ═══════════════════════════════════════════════════════════════
 function toggleTheme() {
     document.body.classList.toggle("light-mode");
     document.getElementById("theme-btn").textContent=document.body.classList.contains("light-mode")?"☀️":"🌙";
@@ -1337,9 +1265,6 @@ function toggleTheme() {
 
 window.onload = initAuth;
 
-// ═══════════════════════════════════════════════════════════════
-//  TABLE EXPORT
-// ═══════════════════════════════════════════════════════════════
 function wrapTables(container) {
     if (!container) return;
     container.querySelectorAll("table").forEach(table => {
@@ -1392,9 +1317,6 @@ function exportTable(table, format) {
     document.body.appendChild(a); a.click(); setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},200);
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  SCROLL BUTTON
-// ═══════════════════════════════════════════════════════════════
 const scrollBtn=document.getElementById("scrollBottomBtn"), chatBoxElement=document.getElementById("chat-box");
 if (chatBoxElement && scrollBtn) {
     chatBoxElement.addEventListener("scroll",()=>{

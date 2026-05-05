@@ -6,7 +6,7 @@ import markdown
 import time
 import re
 
-# load_dotenv() reads .env locally; on Render the env var is set in the dashboard
+
 load_dotenv()
 
 API_KEY = os.getenv("GEMINI_API_KEY", "")

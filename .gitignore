@@ -4,6 +4,5 @@ __pycache__/
 *.pyc
 .vscode/
 
-# User chat data — never commit to Git, created at runtime on server
 data/chats*.json
 data/shared_chats.json

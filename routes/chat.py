@@ -19,7 +19,6 @@ templates = Jinja2Templates(directory="templates")
 BASE_DIR   = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR   = os.path.join(BASE_DIR, "data")
 
-# Ensure data directory exists on startup (important for Render cold starts)
 os.makedirs(DATA_DIR, exist_ok=True)
 
 CURRENT_PDF_TEXT = ""
@@ -29,7 +28,6 @@ def _user_file(user_id: str) -> str:
     """Each user gets their own chats JSON file: data/chats_{user_id}.json"""
     safe = _re.sub(r"[^a-zA-Z0-9_\-]", "_", user_id)
     return os.path.join(DATA_DIR, f"chats_{safe}.json")
-
 
 def _get_user_id(request: Request) -> str:
     """
@@ -292,7 +290,7 @@ async def get_shared_html(request: Request, share_id: str):
 
 @router.get("/api/shared/{share_id}")
 async def get_shared_data(share_id: str):
-    # Shared chat endpoint needs to search all users if not using a central DB
+    
     if not os.path.exists(DATA_DIR):
         raise HTTPException(status_code=404, detail="Shared chat not found")
     for fname in os.listdir(DATA_DIR):
@@ -379,7 +377,7 @@ async def suggest(request: Request):
                     '["question 1","question 2","question 3","question 4","question 5","question 6"]'
                 )
             else:
-                prompt = "" # Will trigger fallback below
+                prompt = "" 
 
         elif not query and context:
             prompt = (
@@ -423,7 +421,7 @@ async def suggest(request: Request):
             prefixed = [s for s in result if s.lower().startswith(query.lower())]
             result   = prefixed if len(prefixed) >= 2 else result
 
-        # Ensure EXACTLY 3 unique suggestions
+       
         unique_result = []
         seen = set()
         for r in result:
@@ -434,7 +432,7 @@ async def suggest(request: Request):
                 if len(unique_result) == 3:
                     break
 
-        # Fallback defaults ONLY for new_chat or empty results
+    
         if (new_chat and not query) or len(unique_result) < 3:
             import random
             all_defaults = [

@@ -18,7 +18,6 @@ async def home(request: Request):
     return templates.TemplateResponse(request, "index.html", {})
 
 
-# Auth0 redirect callback — serves the same SPA so JS can handle the code+state
 @app.get("/callback")
 async def callback(request: Request):
     return templates.TemplateResponse(request, "index.html", {})
