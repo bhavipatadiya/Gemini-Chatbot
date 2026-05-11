@@ -14,14 +14,9 @@ if not API_KEY:
  
 genai.configure(api_key=API_KEY)
  
-PRIMARY_MODEL  = "models/gemma-4-1b-it"
-FALLBACK_MODEL = "gemini-1.5-flash"
- 
-try:
-    model = genai.GenerativeModel(PRIMARY_MODEL)
-except Exception as e:
-    print(f"Primary model failed ({e}), using fallback.")
-    model = genai.GenerativeModel(FALLBACK_MODEL)
+MODEL_NAME = "gemma-3-1b-it"
+
+model = genai.GenerativeModel(MODEL_NAME)
  
  
 # ── Main chat function ────────────────────────────────────────────────────────
