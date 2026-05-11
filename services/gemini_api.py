@@ -14,7 +14,7 @@ if not API_KEY:
  
 genai.configure(api_key=API_KEY)
  
-MODEL_NAME = "gemma-3-1b-it"
+MODEL_NAME = "gemini-1.5-flash"
 
 model = genai.GenerativeModel(MODEL_NAME)
  
