@@ -232,6 +232,7 @@ function _getPanel() {
         }
     }
     return p;
+
 }
 
 function _showPanel(list) {
@@ -312,7 +313,6 @@ async function _prefetchNewChat() {
         if (ta && !ta.value.trim() && _S.mode === "new") _showPanel(_S.ncList);
     }
 
-    
     _S.ncFetching = true;
     try {
         const r = await _apiFetch("/suggest", {
@@ -411,7 +411,6 @@ function _initSuggestions() {
         if (_S.cache[q]) { _showPanel(_S.cache[q]); return; }
         _scheduleFetch(q, 0);
     });
-
 
     ta.addEventListener("input", () => {
         const q = ta.value.trim();

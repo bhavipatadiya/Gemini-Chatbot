@@ -1,32 +1,43 @@
 import google.generativeai as genai
 import os
 import json
-from dotenv import load_dotenv
-import markdown
-import time
 import re
-
-
+import time
+import markdown
+from dotenv import load_dotenv
+ 
 load_dotenv()
-
+ 
 API_KEY = os.getenv("GEMINI_API_KEY", "")
 if not API_KEY:
     raise RuntimeError("GEMINI_API_KEY environment variable is not set.")
-
+ 
 genai.configure(api_key=API_KEY)
-
+ 
 PRIMARY_MODEL  = "models/gemma-3-1b-it"
 FALLBACK_MODEL = "gemini-1.5-flash"
-
+ 
 try:
     model = genai.GenerativeModel(PRIMARY_MODEL)
 except Exception as e:
-    print("Primary model failed, using fallback:", e)
+    print(f"Primary model failed ({e}), using fallback.")
     model = genai.GenerativeModel(FALLBACK_MODEL)
-    
-def call_gemini_api(message: str, conversation_history: list = None,
-                    topic_lock: str = None) -> str:
+ 
+ 
+# ── Main chat function ────────────────────────────────────────────────────────
+ 
+def call_gemini_api(
+    message:              str,
+    conversation_history: list = None,
+    topic_lock:           str  = None,
+    rag_context:          str  = ""       # NEW: injected RAG context
+) -> str:
+    """
+    Call Gemini with optional RAG context.
+    rag_context: pre-formatted string from Pinecone retrieval (can be empty).
+    """
     try:
+        # ── Conversation history block ──
         context_block = ""
         if conversation_history:
             lines = []
@@ -61,6 +72,10 @@ You MUST follow these rules without exception:
 6. This topic lock rule OVERRIDES all other instructions below.
 
 """
+ # ── RAG context block ──
+        rag_block = ""
+        if rag_context and rag_context.strip():
+            rag_block = rag_context + "\n"
 
         prompt = f"""You are a helpful and intelligent AI assistant with memory of the conversation.
 
