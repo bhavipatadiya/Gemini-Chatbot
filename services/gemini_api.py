@@ -7,13 +7,14 @@ import markdown
 from dotenv import load_dotenv
  
 load_dotenv()
- 
-API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+API_KEY = os.getenv("GEMINI_API_KEY")
+
 if not API_KEY:
-    raise RuntimeError("GEMINI_API_KEY environment variable is not set.")
- 
+    raise RuntimeError("GEMINI_API_KEY is missing")
+
 genai.configure(api_key=API_KEY)
- 
+
 MODEL_NAME = "gemini-1.5-flash"
 
 model = genai.GenerativeModel(MODEL_NAME)
