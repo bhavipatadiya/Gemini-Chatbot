@@ -10,12 +10,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Config — read from environment correctly ──────────────────────────────────
+# ── Config ────────────────────────────────────────────────────────────────────
 PINECONE_API_KEY    = os.getenv("PINECONE_API_KEY", "")
 PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "chatbot-rag")
+PINECONE_INDEX_HOST = os.getenv("PINECONE_INDEX_HOST", "")   # from Pinecone dashboard → Connect
 GEMINI_API_KEY      = os.getenv("GEMINI_API_KEY", "")
 
-# Embedding REST endpoint — no SDK needed
+# Embedding REST endpoint
 _EMBED_URL = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent"
 
 # ── Lazy Pinecone init ────────────────────────────────────────────────────────
@@ -29,11 +30,15 @@ def _get_index():
         raise RuntimeError("PINECONE_API_KEY not set in environment.")
     try:
         from pinecone import Pinecone
-        pc        = Pinecone(api_key=PINECONE_API_KEY)
-        _pc_index = pc.Index(PINECONE_INDEX_NAME)
+        pc = Pinecone(api_key=PINECONE_API_KEY)
+        # Use host directly if set — avoids SSL lookup on local machines
+        if PINECONE_INDEX_HOST:
+            _pc_index = pc.Index(host=PINECONE_INDEX_HOST)
+        else:
+            _pc_index = pc.Index(PINECONE_INDEX_NAME)
         return _pc_index
     except ImportError:
-        raise RuntimeError("pinecone-client not installed. Add pinecone-client to requirements.txt")
+        raise RuntimeError("pinecone not installed. Run: pip install pinecone")
 
 
 # ── Embedding via REST (no deprecated SDK) ────────────────────────────────────
