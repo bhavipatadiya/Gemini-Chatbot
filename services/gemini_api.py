@@ -14,11 +14,11 @@ if not API_KEY:
     raise RuntimeError("GEMINI_API_KEY environment variable is not set.")
 
 # Direct REST API — no SDK, no model name mangling, no version conflicts
-# Primary: gemini-2.0-flash-lite  |  Fallback: gemini-2.0-flash
+# Both models confirmed available on this API key via list_models
 _MODELS = [
-    "gemini-2.0-flash-lite",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash-latest",
+    "gemini-2.0-flash-lite",   # fastest free-tier, primary
+    "gemini-2.0-flash",        # fallback if lite is rate-limited
+    "gemma-4-26b-a4b-it",      # Gemma fallback
 ]
 _API_BASE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
