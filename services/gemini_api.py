@@ -14,9 +14,13 @@ if not API_KEY:
     raise RuntimeError("GEMINI_API_KEY environment variable is not set.")
 
 # Direct REST API — no SDK, no model name mangling, no version conflicts
-# gemini-2.0-flash-lite: fastest free-tier model confirmed on this API key
-MODEL_NAME = "gemini-2.0-flash-lite"
-_API_URL   = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent"
+# Primary: gemini-2.0-flash-lite  |  Fallback: gemini-2.0-flash
+_MODELS = [
+    "gemini-2.0-flash-lite",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash-latest",
+]
+_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
 # ── Main chat function ────────────────────────────────────────────────────────
@@ -363,43 +367,73 @@ def _strip_html(html: str) -> str:
 
 
 def _call_with_retry(prompt: str, as_html: bool = True) -> str:
-    max_retries = 3
-    base_delay  = 2
+    """
+    Try each model in _MODELS in order.
+    On 429 (rate limit): wait with exponential backoff and retry same model.
+    On 404 (model not found): immediately try next model.
+    """
+    last_err = None
 
-    for attempt in range(max_retries):
-        try:
-            resp = _requests.post(
-                _API_URL,
-                headers={"Content-Type": "application/json"},
-                params={"key": API_KEY},
-                json={
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {
-                        "temperature": 0.7,
-                        "maxOutputTokens": 2048
-                    }
-                },
-                timeout=60
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            text = (
-                data.get("candidates", [{}])[0]
-                    .get("content", {})
-                    .get("parts", [{}])[0]
-                    .get("text", "")
-            )
-            if not text:
-                raise Exception("Empty response from model")
-            if as_html:
-                return markdown.markdown(text, extensions=["extra", "nl2br", "codehilite"])
-            return text
+    for model_name in _MODELS:
+        url        = _API_BASE.format(model=model_name)
+        max_tries  = 3
+        base_delay = 5   # start at 5s for rate limit — longer than before
 
-        except Exception as e:
-            err = str(e)
-            if ("503" in err or "429" in err or "quota" in err.lower()) and attempt < max_retries - 1:
-                time.sleep(base_delay * (2 ** attempt))
-                continue
-            raise e
+        for attempt in range(max_tries):
+            try:
+                resp = _requests.post(
+                    url,
+                    headers={"Content-Type": "application/json"},
+                    params={"key": API_KEY},
+                    json={
+                        "contents": [{"parts": [{"text": prompt}]}],
+                        "generationConfig": {
+                            "temperature": 0.7,
+                            "maxOutputTokens": 2048
+                        }
+                    },
+                    timeout=60
+                )
 
-    raise Exception("Gemini Error: Service Unavailable after retries.")
+                # 429 rate limit — wait and retry same model
+                if resp.status_code == 429:
+                    if attempt < max_tries - 1:
+                        wait = base_delay * (2 ** attempt)   # 5s, 10s, 20s
+                        time.sleep(wait)
+                        continue
+                    else:
+                        last_err = f"429 rate limit on {model_name}"
+                        break   # try next model
+
+                # 404 model not found — skip to next model immediately
+                if resp.status_code == 404:
+                    last_err = f"404 model not found: {model_name}"
+                    break
+
+                resp.raise_for_status()
+
+                data = resp.json()
+                text = (
+                    data.get("candidates", [{}])[0]
+                        .get("content", {})
+                        .get("parts", [{}])[0]
+                        .get("text", "")
+                )
+                if not text:
+                    raise Exception(f"Empty response from {model_name}")
+
+                if as_html:
+                    return markdown.markdown(text, extensions=["extra", "nl2br", "codehilite"])
+                return text
+
+            except _requests.exceptions.HTTPError:
+                raise   # already handled above via status code checks
+            except Exception as e:
+                err = str(e)
+                if ("503" in err or "502" in err) and attempt < max_tries - 1:
+                    time.sleep(base_delay * (2 ** attempt))
+                    continue
+                last_err = err
+                break   # try next model
+
+    raise Exception(f"Gemini Error: All models failed. Last error: {last_err}")
