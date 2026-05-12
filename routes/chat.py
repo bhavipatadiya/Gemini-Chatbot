@@ -95,19 +95,30 @@ def process_chat_request(data: dict, user_id: str = "anonymous"):
     if pdf_text:
         CURRENT_PDF_TEXT = pdf_text
 
-    # PDF mode: bypass RAG, use the uploaded PDF directly
+    # PDF mode: use uploaded PDF text + RAG from Pinecone for best answer
     if use_pdf:
         active_pdf = pdf_text or CURRENT_PDF_TEXT
+        rag_context = ""
+
+        # Also pull relevant chunks from Pinecone (previously indexed PDFs)
+        if use_rag and user_id != "anonymous":
+            rag_context = _get_rag_context(message, user_id)
+
         if active_pdf:
+            # Combine: direct PDF text (current upload) + Pinecone context (past uploads)
+            pdf_section = f"PDF Content:\n{active_pdf[:4000]}"
+            rag_section = f"\n\n{rag_context}" if rag_context else ""
             final_prompt = (
-                "You are a helpful assistant. Answer using the PDF below.\n"
-                "Be concise. If not in PDF, say so.\n\n"
-                f"PDF:\n{active_pdf[:6000]}\n\nQuestion: {message}\n\nAnswer:"
+                "You are a helpful assistant. Answer the question using the PDF content below.\n"
+                "Be concise and accurate. If the answer is not in the content, say so.\n\n"
+                f"{pdf_section}{rag_section}\n\nQuestion: {message}\n\nAnswer:"
             )
             reply = call_gemini_api(final_prompt, [], None, "")
         else:
-            final_prompt = f"The user asked: {message}\n\nNo PDF uploaded yet. Ask user to upload a PDF first."
-            reply = call_gemini_api(final_prompt, [], None, "")
+            reply = call_gemini_api(
+                f"The user asked: {message}\n\nNo PDF uploaded yet. Ask user to upload a PDF first.",
+                [], None, ""
+            )
         return ChatResponse(reply=reply)
 
     # Normal mode: check Pinecone for relevant context
@@ -513,12 +524,15 @@ async def suggest(request: Request):
 
 
 @router.post("/upload_pdf")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(request: Request, file: UploadFile = File(...)):
     """
-    Upload PDF for single-chat context (existing feature, unchanged).
-    Also optionally indexes to Pinecone if configured.
+    Upload PDF for chat context.
+    - Extracts text and returns it for immediate in-chat use (existing behaviour)
+    - Also indexes the full text to Pinecone in the background so future
+      questions about this PDF are answered via RAG (persistent, per-user)
     """
     global CURRENT_PDF_TEXT
+    uid = _get_user_id(request)
     try:
         if not file.filename.lower().endswith(".pdf"):
             raise HTTPException(status_code=400, detail="Only PDF files allowed")
@@ -533,12 +547,40 @@ async def upload_pdf(file: UploadFile = File(...)):
 
         doc        = fitz.open(stream=contents, filetype="pdf")
         page_count = doc.page_count
-        text       = "".join(f"\n--- Page {n+1} ---\n{doc[n].get_text()}" for n in range(page_count))
+        full_text  = "".join(f"\n--- Page {n+1} ---\n{doc[n].get_text()}" for n in range(page_count))
         doc.close()
-        text = text.strip()
-        if not text: raise HTTPException(status_code=400, detail="PDF has no readable text.")
-        text = text[:12000]; CURRENT_PDF_TEXT = text
-        return {"filename":file.filename,"content":text,"pages":page_count}
+        full_text = full_text.strip()
+        if not full_text:
+            raise HTTPException(status_code=400, detail="PDF has no readable text.")
+
+        # Store truncated version for immediate in-chat use (existing behaviour)
+        chat_text        = full_text[:12000]
+        CURRENT_PDF_TEXT = chat_text
+
+        # Index full text to Pinecone in background (non-blocking)
+        # so the user gets an instant response and RAG works for future questions
+        if uid != "anonymous":
+            try:
+                from services.rag_service import upsert_document, pinecone_available
+                if pinecone_available():
+                    import threading, uuid as _uuid
+                    doc_id = _uuid.uuid4().hex[:12]
+                    def _index():
+                        try:
+                            upsert_document(
+                                doc_id   = doc_id,
+                                text     = full_text[:50000],
+                                filename = file.filename,
+                                user_id  = uid
+                            )
+                            print(f"[RAG] Indexed '{file.filename}' ({page_count} pages) for user {uid[:8]}")
+                        except Exception as e:
+                            print(f"[RAG] Background index failed: {e}")
+                    threading.Thread(target=_index, daemon=True).start()
+            except Exception as e:
+                print(f"[RAG] Index setup failed: {e}")  # never block the upload
+
+        return {"filename": file.filename, "content": chat_text, "pages": page_count}
     except HTTPException: raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process PDF: {e}")
