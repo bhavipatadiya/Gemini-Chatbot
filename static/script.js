@@ -43,8 +43,8 @@ async function initAuth() {
     }
 }
 
-async function _apiFetch(url, options = {}) {
-    if (isSharedView || !auth0Client) return fetch(url, options);
+async function _apiFetch(url, options = {}, retries = 2) {
+    if (isSharedView || !auth0Client) return _fetchWithRetry(url, options, retries);
     try {
         const token = await auth0Client.getTokenSilently();
         const user  = await auth0Client.getUser();
@@ -58,7 +58,26 @@ async function _apiFetch(url, options = {}) {
     } catch(e) {
         console.error("Auth0 token/user fetch failed:", e);
     }
-    return fetch(url, options);
+    return _fetchWithRetry(url, options, retries);
+}
+
+// Retries on network errors (e.g. Render cold start / service waking up)
+async function _fetchWithRetry(url, options, retries) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        try {
+            const res = await fetch(url, options);
+            return res;
+        } catch(e) {
+            // TypeError: Failed to fetch = network error (server down / waking up)
+            if (attempt < retries) {
+                // Wait 3s then retry — gives Render time to wake up
+                await new Promise(r => setTimeout(r, 3000));
+                continue;
+            }
+            // All retries exhausted — throw a clear message
+            throw new Error("Cannot reach server. It may be starting up — please try again in a moment.");
+        }
+    }
 }
 
 function showLoginScreen() {
@@ -860,7 +879,11 @@ async function _sendAndAppend(msg, chatBox, isEdit = false) {
     } catch(err) {
         ld.remove();
         const ed = document.createElement("div"); ed.className = "msg bot error";
-        ed.textContent = "Error: "+err.message; chatBox.appendChild(ed); scrollToBottom();
+        const msg = err.message || "Unknown error";
+        ed.textContent = msg.includes("Cannot reach server")
+            ? "⚠ Server is starting up, please wait a moment and try again."
+            : "Error: " + msg;
+        chatBox.appendChild(ed); scrollToBottom();
     }
 }
 
@@ -1252,7 +1275,11 @@ async function sendMessage() {
     } catch(err) {
         ld.remove();
         const ed=document.createElement("div"); ed.className="msg bot error";
-        ed.textContent="Error: "+err.message; chatBox.appendChild(ed); scrollToBottom();
+        const emsg = err.message || "Unknown error";
+        ed.textContent = emsg.includes("Cannot reach server")
+            ? "⚠ Server is starting up, please wait a moment and try again."
+            : "Error: " + emsg;
+        chatBox.appendChild(ed); scrollToBottom();
     }
 }
 
