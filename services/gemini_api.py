@@ -1,43 +1,33 @@
-import google.generativeai as genai
 import os
 import json
 import re
 import time
 import markdown
 from dotenv import load_dotenv
- 
+from html.parser import HTMLParser
+from google import genai
+from google.genai import types
+
 load_dotenv()
 
-API_KEY = os.getenv("GEMINI_API_KEY")
-
+API_KEY = os.getenv("GEMINI_API_KEY", "")
 if not API_KEY:
-    raise RuntimeError("GEMINI_API_KEY is missing")
+    raise RuntimeError("GEMINI_API_KEY environment variable is not set.")
 
-genai.configure(api_key=API_KEY)
-
+# New google-genai SDK — correct model name for Gemma 3 1B IT
+client     = genai.Client(api_key=API_KEY)
 MODEL_NAME = "gemma-3-1b-it"
 
-try:
-    model = genai.GenerativeModel(MODEL_NAME)
-except Exception as e:
-    print(f"Model load error: {e}")
-    model = None
- 
- 
+
 # ── Main chat function ────────────────────────────────────────────────────────
- 
+
 def call_gemini_api(
     message:              str,
     conversation_history: list = None,
     topic_lock:           str  = None,
-    rag_context:          str  = ""       # NEW: injected RAG context
+    rag_context:          str  = ""
 ) -> str:
-    """
-    Call Gemini with optional RAG context.
-    rag_context: pre-formatted string from Pinecone retrieval (can be empty).
-    """
     try:
-        # ── Conversation history block ──
         context_block = ""
         if conversation_history:
             lines = []
@@ -54,7 +44,7 @@ def call_gemini_api(
                     + "\n".join(lines)
                     + "\n\n"
                 )
-                
+
         topic_block = ""
         if topic_lock:
             topic_block = f"""## ⚠ TOPIC LOCK — HIGHEST PRIORITY INSTRUCTION:
@@ -72,14 +62,14 @@ You MUST follow these rules without exception:
 6. This topic lock rule OVERRIDES all other instructions below.
 
 """
- # ── RAG context block ──
+
         rag_block = ""
         if rag_context and rag_context.strip():
             rag_block = rag_context + "\n"
 
         prompt = f"""You are a helpful and intelligent AI assistant with memory of the conversation.
 
-{topic_block}{context_block}## Current Question:
+{topic_block}{rag_block}{context_block}## Current Question:
 {message}
 
 STRICT RESPONSE RULES — follow exactly:
@@ -135,87 +125,62 @@ STRICT RESPONSE RULES — follow exactly:
         raise Exception(f"Gemini Error: {str(e)}")
 
 
-def extract_table_from_html(html_content: str, chat_text: str) -> dict:
-    """
-    Priority 1: Parse an existing <table> from the HTML response.
-    Priority 2: If no table, ask Gemini to structure the text as a table.
-    """
-    try:
-        
-        from html.parser import HTMLParser
+# ── Table extraction ──────────────────────────────────────────────────────────
 
+def extract_table_from_html(html_content: str, chat_text: str) -> dict:
+    try:
         class TableParser(HTMLParser):
             def __init__(self):
                 super().__init__()
-                self.in_table = False
-                self.in_row   = False
-                self.in_cell  = False
-                self.is_header= False
+                self.in_table = self.in_row = self.in_cell = self.is_header = False
                 self.current_cell = ""
                 self.current_row  = []
-                self.headers  = []
-                self.rows     = []
+                self.headers      = []
+                self.rows         = []
 
             def handle_starttag(self, tag, attrs):
-                if tag == "table": self.in_table = True
-                elif tag in ("tr",) and self.in_table:
-                    self.in_row = True; self.current_row = []
-                elif tag in ("th",) and self.in_row:
-                    self.in_cell = True; self.is_header = True; self.current_cell = ""
-                elif tag in ("td",) and self.in_row:
-                    self.in_cell = True; self.is_header = False; self.current_cell = ""
+                if tag == "table":                        self.in_table = True
+                elif tag == "tr"  and self.in_table:      self.in_row = True; self.current_row = []
+                elif tag == "th"  and self.in_row:        self.in_cell = True; self.is_header = True;  self.current_cell = ""
+                elif tag == "td"  and self.in_row:        self.in_cell = True; self.is_header = False; self.current_cell = ""
 
             def handle_endtag(self, tag):
                 if tag in ("th", "td") and self.in_cell:
                     self.in_cell = False
                     cell = self.current_cell.strip()
-                    if self.is_header:
-                        self.headers.append(cell)
-                    else:
-                        self.current_row.append(cell)
+                    if self.is_header: self.headers.append(cell)
+                    else:              self.current_row.append(cell)
                 elif tag == "tr" and self.in_row:
                     self.in_row = False
-                    if self.current_row:
-                        self.rows.append(self.current_row[:])
+                    if self.current_row: self.rows.append(self.current_row[:])
                 elif tag == "table":
                     self.in_table = False
 
             def handle_data(self, data):
-                if self.in_cell:
-                    self.current_cell += data
+                if self.in_cell: self.current_cell += data
 
         parser = TableParser()
         parser.feed(html_content)
 
         if parser.headers and parser.rows:
-            
-            headers = parser.headers
-            rows    = parser.rows
-
-           
-            labels = [r[0] for r in rows if r]
+            labels = [r[0] for r in parser.rows if r]
             values = []
-            for r in rows:
+            for r in parser.rows:
                 found = False
                 for cell in r[1:]:
                     clean = re.sub(r"[^0-9.\-]", "", str(cell))
                     try:
-                        values.append(float(clean))
-                        found = True
-                        break
-                    except:
+                        values.append(float(clean)); found = True; break
+                    except Exception:
                         continue
                 if not found:
                     values.append(float(len(values) + 1) * 10)
-
             return {
-                "headers": headers,
-                "rows":    rows,
-                "labels":  labels,
-                "values":  values,
-                "xLabel":  headers[0] if headers else "Category",
-                "yLabel":  headers[1] if len(headers) > 1 else "Value",
-                "source":  "html_table"
+                "headers": parser.headers, "rows": parser.rows,
+                "labels": labels, "values": values,
+                "xLabel": parser.headers[0] if parser.headers else "Category",
+                "yLabel": parser.headers[1] if len(parser.headers) > 1 else "Value",
+                "source": "html_table"
             }
 
         plain = _strip_html(html_content)
@@ -224,8 +189,8 @@ def extract_table_from_html(html_content: str, chat_text: str) -> dict:
     except Exception:
         return _ask_gemini_for_table(chat_text)
 
+
 def _ask_gemini_for_table(text: str) -> dict:
-    """Ask Gemini to convert text content into a structured table."""
     try:
         prompt = f"""You are a data structuring assistant.
 Convert the following text into a clean structured table.
@@ -236,10 +201,7 @@ TEXT:
 Return ONLY a raw JSON object (no markdown, no code blocks):
 {{
   "headers": ["Column1", "Column2", "Column3"],
-  "rows": [
-    ["row1col1", "row1col2", "row1col3"],
-    ["row2col1", "row2col2", "row2col3"]
-  ],
+  "rows": [["row1col1", "row1col2", "row1col3"], ["row2col1", "row2col2", "row2col3"]],
   "labels": ["row1col1", "row2col1"],
   "values": [10, 20],
   "xLabel": "Column1",
@@ -250,48 +212,38 @@ Rules:
 - headers = meaningful column names from the content
 - rows = actual data rows (at least 2, max 10)
 - For comparison text: headers = ["Feature", "Item A", "Item B", ...]
-  rows = [["feature name", "value for A", "value for B"], ...]
 - labels = first column of each row
 - values = best numeric representation of each row (for chart use)
 - Never return empty arrays
 """
         raw = _call_with_retry(prompt, as_html=False).strip()
-        raw = re.sub(r"^```json\s*", "", raw)
-        raw = re.sub(r"^```\s*",     "", raw)
-        raw = re.sub(r"\s*```$",     "", raw).strip()
-
+        raw = re.sub(r"^```json\s*|^```\s*|\s*```$", "", raw).strip()
         data    = json.loads(raw)
         headers = data.get("headers", [])
-        rows    = data.get("rows",    [])
-        labels  = data.get("labels",  [r[0] for r in rows if r])
+        rows    = data.get("rows", [])
+        labels  = data.get("labels", [r[0] for r in rows if r])
         values  = []
         for v in data.get("values", []):
-            try:    values.append(float(str(v).replace(",","")))
+            try:    values.append(float(str(v).replace(",", "")))
             except: values.append(0.0)
-
         if not headers or not rows:
             raise ValueError("Empty table from Gemini")
-
         return {
-            "headers": headers,
-            "rows":    rows,
-            "labels":  labels,
-            "values":  values,
-            "xLabel":  headers[0] if headers else "Category",
-            "yLabel":  headers[1] if len(headers) > 1 else "Value",
-            "source":  "gemini_generated"
+            "headers": headers, "rows": rows, "labels": labels, "values": values,
+            "xLabel": headers[0] if headers else "Category",
+            "yLabel": headers[1] if len(headers) > 1 else "Value",
+            "source": "gemini_generated"
         }
-
     except Exception:
         return {
             "headers": ["Item", "Value"],
             "rows":    [["A","40"],["B","70"],["C","55"],["D","85"]],
-            "labels":  ["A","B","C","D"],
-            "values":  [40.0, 70.0, 55.0, 85.0],
-            "xLabel":  "Item",
-            "yLabel":  "Value",
-            "source":  "fallback"
+            "labels":  ["A","B","C","D"], "values": [40.0, 70.0, 55.0, 85.0],
+            "xLabel":  "Item", "yLabel": "Value", "source": "fallback"
         }
+
+
+# ── Chart data extraction ─────────────────────────────────────────────────────
 
 def extract_chart_data(chat_text: str) -> dict:
     try:
@@ -318,41 +270,34 @@ Rules:
 - For time-series data (years): labels = years, values = data points
 """
         raw = _call_with_retry(prompt, as_html=False).strip()
-        raw = re.sub(r"^```json\s*", "", raw)
-        raw = re.sub(r"^```\s*",     "", raw)
-        raw = re.sub(r"\s*```$",     "", raw).strip()
-
+        raw = re.sub(r"^```json\s*|^```\s*|\s*```$", "", raw).strip()
         data   = json.loads(raw)
         labels = data.get("labels", [])
         values = []
         for v in data.get("values", []):
-            try:    values.append(float(str(v).replace(",","")))
+            try:    values.append(float(str(v).replace(",", "")))
             except: values.append(0.0)
-
         min_len = min(len(labels), len(values))
         if min_len < 2:
             labels = ["A","B","C","D"]; values = [40.0,70.0,55.0,85.0]; min_len = 4
-
         labels = labels[:min_len]; values = values[:min_len]
-        rows   = data.get("rows", [[str(l),str(v)] for l,v in zip(labels,values)])
-
         return {
-            "labels":  labels,
-            "values":  values,
-            "xLabel":  data.get("xLabel","Category"),
-            "yLabel":  data.get("yLabel","Value"),
-            "headers": data.get("headers",["Category","Value"]),
-            "rows":    rows
+            "labels":  labels, "values": values,
+            "xLabel":  data.get("xLabel", "Category"),
+            "yLabel":  data.get("yLabel", "Value"),
+            "headers": data.get("headers", ["Category", "Value"]),
+            "rows":    data.get("rows", [[str(l),str(v)] for l,v in zip(labels,values)])
         }
     except Exception:
         return {
-            "labels":  ["A","B","C","D"],
-            "values":  [40.0,70.0,55.0,85.0],
-            "xLabel":  "Category",
-            "yLabel":  "Value",
+            "labels":  ["A","B","C","D"], "values": [40.0,70.0,55.0,85.0],
+            "xLabel":  "Category", "yLabel": "Value",
             "headers": ["Category","Value"],
             "rows":    [["A","40"],["B","70"],["C","55"],["D","85"]]
         }
+
+
+# ── Visualization explanation ─────────────────────────────────────────────────
 
 def generate_viz_explanation(viz_type: str, chart_type: str,
                               labels: list, values: list,
@@ -361,15 +306,12 @@ def generate_viz_explanation(viz_type: str, chart_type: str,
     try:
         if viz_type == "table":
             data_desc = f"Table headers: {headers}\nRows (first 5): {rows[:5]}"
-            task      = ("Explain what this table shows. Describe key comparisons, "
-                         "patterns, or insights from the data.")
+            task      = "Explain what this table shows. Describe key comparisons, patterns, or insights from the data."
         else:
             type_name = chart_type or "bar"
             pairs     = ", ".join(f"{l}={v}" for l, v in zip(labels[:8], values[:8]))
-            data_desc = (f"{type_name.capitalize()} chart. "
-                         f"X-axis: {xLabel}, Y-axis: {yLabel}. Data: {pairs}")
-            task      = (f"Explain what this {type_name} chart shows. "
-                         "Describe key trends, highest/lowest values, and meaning.")
+            data_desc = f"{type_name.capitalize()} chart. X-axis: {xLabel}, Y-axis: {yLabel}. Data: {pairs}"
+            task      = f"Explain what this {type_name} chart shows. Describe key trends, highest/lowest values, and meaning."
 
         prompt = f"""You are explaining a data visualization.
 
@@ -399,28 +341,31 @@ Rules:
 - Be specific about actual values/items from the data
 - No markdown, no code fences, just HTML
 """
-        result = _call_with_retry(prompt, as_html=False).strip()       
-        result = re.sub(r"^```html?\s*", "", result)
-        result = re.sub(r"\s*```$",      "", result).strip()
+        result = _call_with_retry(prompt, as_html=False).strip()
+        result = re.sub(r"^```html?\s*|\s*```$", "", result).strip()
         return result if result.startswith("<") else f"<p>{result}</p>"
 
     except Exception:
         return "<p>Could not generate explanation for this visualization.</p>"
 
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
 def _strip_html(html: str) -> str:
     return re.sub(r"<[^>]+>", " ", html).strip()
 
-def _call_with_retry(prompt: str, as_html: bool = True) -> str:
-    if model is None:
-        raise Exception("Gemini model failed to load. Check your API key and model name.")
 
+def _call_with_retry(prompt: str, as_html: bool = True) -> str:
     max_retries = 3
     base_delay  = 2
     response    = None
 
     for attempt in range(max_retries):
         try:
-            response = model.generate_content(prompt)
+            response = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=prompt
+            )
             break
         except Exception as e:
             err = str(e)
@@ -435,7 +380,5 @@ def _call_with_retry(prompt: str, as_html: bool = True) -> str:
     text = response.text or ""
 
     if as_html:
-        return markdown.markdown(
-            text, extensions=["extra", "nl2br", "codehilite"]
-        )
+        return markdown.markdown(text, extensions=["extra", "nl2br", "codehilite"])
     return text
