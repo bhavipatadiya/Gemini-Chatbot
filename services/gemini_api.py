@@ -5,8 +5,7 @@ import time
 import markdown
 from dotenv import load_dotenv
 from html.parser import HTMLParser
-from google import genai
-from google.genai import types
+import requests as _requests
 
 load_dotenv()
 
@@ -14,9 +13,11 @@ API_KEY = os.getenv("GEMINI_API_KEY", "")
 if not API_KEY:
     raise RuntimeError("GEMINI_API_KEY environment variable is not set.")
 
-# New google-genai SDK — correct model name for Gemma 3 1B IT
-client     = genai.Client(api_key=API_KEY)
-MODEL_NAME = "gemma-3-1b-it"
+# Use direct REST API — works with any installed package version,
+# no SDK version conflicts, hits v1 (not v1beta), correct model name
+MODEL_NAME   = "gemma-3-1b-it"
+_API_URL     = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent"
+_API_HEADERS = {"Content-Type": "application/json"}
 
 
 # ── Main chat function ────────────────────────────────────────────────────────
@@ -358,27 +359,41 @@ def _strip_html(html: str) -> str:
 def _call_with_retry(prompt: str, as_html: bool = True) -> str:
     max_retries = 3
     base_delay  = 2
-    response    = None
 
     for attempt in range(max_retries):
         try:
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=prompt
+            resp = _requests.post(
+                _API_URL,
+                headers=_API_HEADERS,
+                params={"key": API_KEY},
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.7,
+                        "maxOutputTokens": 2048
+                    }
+                },
+                timeout=60
             )
-            break
+            resp.raise_for_status()
+            data = resp.json()
+            text = (
+                data.get("candidates", [{}])[0]
+                    .get("content", {})
+                    .get("parts", [{}])[0]
+                    .get("text", "")
+            )
+            if not text:
+                raise Exception("Empty response from model")
+            if as_html:
+                return markdown.markdown(text, extensions=["extra", "nl2br", "codehilite"])
+            return text
+
         except Exception as e:
             err = str(e)
-            if ("503" in err or "429" in err) and attempt < max_retries - 1:
+            if ("503" in err or "429" in err or "quota" in err.lower()) and attempt < max_retries - 1:
                 time.sleep(base_delay * (2 ** attempt))
                 continue
             raise e
 
-    if not response:
-        raise Exception("Gemini Error: Service Unavailable after retries.")
-
-    text = response.text or ""
-
-    if as_html:
-        return markdown.markdown(text, extensions=["extra", "nl2br", "codehilite"])
-    return text
+    raise Exception("Gemini Error: Service Unavailable after retries.")
