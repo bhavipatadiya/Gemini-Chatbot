@@ -15,9 +15,13 @@ if not API_KEY:
 
 genai.configure(api_key=API_KEY)
 
-MODEL_NAME = "gemini-1.5-flash"
+MODEL_NAME = "gemma-3-1b-it"
 
-model = genai.GenerativeModel(MODEL_NAME)
+try:
+    model = genai.GenerativeModel(MODEL_NAME)
+except Exception as e:
+    print(f"Model load error: {e}")
+    model = None
  
  
 # ── Main chat function ────────────────────────────────────────────────────────
@@ -407,14 +411,17 @@ def _strip_html(html: str) -> str:
     return re.sub(r"<[^>]+>", " ", html).strip()
 
 def _call_with_retry(prompt: str, as_html: bool = True) -> str:
+    if model is None:
+        raise Exception("Gemini model failed to load. Check your API key and model name.")
+
     max_retries = 3
     base_delay  = 2
     response    = None
 
     for attempt in range(max_retries):
         try:
-           response = model.generate_content(prompt)
-           break
+            response = model.generate_content(prompt)
+            break
         except Exception as e:
             err = str(e)
             if ("503" in err or "429" in err) and attempt < max_retries - 1:
