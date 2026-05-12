@@ -14,11 +14,11 @@ if not API_KEY:
     raise RuntimeError("GEMINI_API_KEY environment variable is not set.")
 
 # Direct REST API — no SDK, no model name mangling, no version conflicts
-# Both models confirmed available on this API key via list_models
+# All models confirmed available on this API key via list_models
 _MODELS = [
     "gemini-2.0-flash-lite",   # fastest free-tier, primary
-    "gemini-2.0-flash",        # fallback if lite is rate-limited
-    "gemma-4-26b-a4b-it",      # Gemma fallback
+    "gemini-2.0-flash",        # fallback 1
+    "gemini-2.5-flash",        # fallback 2 — confirmed on this key
 ]
 _API_BASE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
@@ -407,6 +407,11 @@ def _call_with_retry(prompt: str, as_html: bool = True) -> str:
 
                 if resp.status_code == 404:
                     last_err = f"404 model not found: {model_name}"
+                    break
+
+                # 500 server error — skip to next model
+                if resp.status_code >= 500:
+                    last_err = f"{resp.status_code} server error on {model_name}"
                     break
 
                 resp.raise_for_status()
