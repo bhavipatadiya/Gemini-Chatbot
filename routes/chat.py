@@ -559,26 +559,30 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
 
         # Index full text to Pinecone in background (non-blocking)
         # so the user gets an instant response and RAG works for future questions
-        if uid != "anonymous":
-            try:
-                from services.rag_service import upsert_document, pinecone_available
-                if pinecone_available():
-                    import threading, uuid as _uuid
-                    doc_id = _uuid.uuid4().hex[:12]
-                    def _index():
-                        try:
-                            upsert_document(
-                                doc_id   = doc_id,
-                                text     = full_text[:50000],
-                                filename = file.filename,
-                                user_id  = uid
-                            )
-                            print(f"[RAG] Indexed '{file.filename}' ({page_count} pages) for user {uid[:8]}")
-                        except Exception as e:
-                            print(f"[RAG] Background index failed: {e}")
-                    threading.Thread(target=_index, daemon=True).start()
-            except Exception as e:
-                print(f"[RAG] Index setup failed: {e}")  # never block the upload
+        try:
+            from services.rag_service import upsert_document, pinecone_available
+            if pinecone_available():
+                import threading, uuid as _uuid
+                _doc_id   = _uuid.uuid4().hex[:12]
+                _filename = file.filename
+                _text     = full_text[:50000]
+                _uid      = uid   # capture for thread closure
+
+                def _index_bg():
+                    try:
+                        result = upsert_document(
+                            doc_id   = _doc_id,
+                            text     = _text,
+                            filename = _filename,
+                            user_id  = _uid
+                        )
+                        print(f"[RAG] ✓ Indexed '{_filename}': {result['chunks']} chunks → namespace '{result.get('namespace','?')}'")
+                    except Exception as e:
+                        print(f"[RAG] ✗ Index failed for '{_filename}': {e}")
+
+                threading.Thread(target=_index_bg, daemon=True).start()
+        except Exception as e:
+            print(f"[RAG] Index setup error: {e}")
 
         return {"filename": file.filename, "content": chat_text, "pages": page_count}
     except HTTPException: raise
