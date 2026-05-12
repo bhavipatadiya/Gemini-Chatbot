@@ -371,13 +371,16 @@ def _call_with_retry(prompt: str, as_html: bool = True) -> str:
     Try each model in _MODELS in order.
     On 429 (rate limit): wait with exponential backoff and retry same model.
     On 404 (model not found): immediately try next model.
+    Prompt is truncated to 6000 chars to avoid timeouts on large inputs.
     """
     last_err = None
+    # Truncate prompt to avoid slow responses / timeouts on free tier
+    prompt = prompt[:6000] if len(prompt) > 6000 else prompt
 
     for model_name in _MODELS:
         url        = _API_BASE.format(model=model_name)
-        max_tries  = 3
-        base_delay = 5   # start at 5s for rate limit — longer than before
+        max_tries  = 2
+        base_delay = 3
 
         for attempt in range(max_tries):
             try:
@@ -389,23 +392,19 @@ def _call_with_retry(prompt: str, as_html: bool = True) -> str:
                         "contents": [{"parts": [{"text": prompt}]}],
                         "generationConfig": {
                             "temperature": 0.7,
-                            "maxOutputTokens": 2048
+                            "maxOutputTokens": 1024
                         }
                     },
-                    timeout=60
+                    timeout=30   # 30s — enough for free tier, avoids long hangs
                 )
 
-                # 429 rate limit — wait and retry same model
                 if resp.status_code == 429:
                     if attempt < max_tries - 1:
-                        wait = base_delay * (2 ** attempt)   # 5s, 10s, 20s
-                        time.sleep(wait)
+                        time.sleep(base_delay * (2 ** attempt))
                         continue
-                    else:
-                        last_err = f"429 rate limit on {model_name}"
-                        break   # try next model
+                    last_err = f"429 rate limit on {model_name}"
+                    break
 
-                # 404 model not found — skip to next model immediately
                 if resp.status_code == 404:
                     last_err = f"404 model not found: {model_name}"
                     break
@@ -426,14 +425,17 @@ def _call_with_retry(prompt: str, as_html: bool = True) -> str:
                     return markdown.markdown(text, extensions=["extra", "nl2br", "codehilite"])
                 return text
 
+            except _requests.exceptions.Timeout:
+                last_err = f"Timeout on {model_name}"
+                break   # try next model immediately on timeout
             except _requests.exceptions.HTTPError:
-                raise   # already handled above via status code checks
+                raise
             except Exception as e:
                 err = str(e)
                 if ("503" in err or "502" in err) and attempt < max_tries - 1:
-                    time.sleep(base_delay * (2 ** attempt))
+                    time.sleep(base_delay)
                     continue
                 last_err = err
-                break   # try next model
+                break
 
     raise Exception(f"Gemini Error: All models failed. Last error: {last_err}")
