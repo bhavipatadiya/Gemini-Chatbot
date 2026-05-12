@@ -3,9 +3,9 @@ import json
 import re
 import time
 import markdown
+import requests as _requests
 from dotenv import load_dotenv
 from html.parser import HTMLParser
-import requests as _requests
 
 load_dotenv()
 
@@ -13,11 +13,10 @@ API_KEY = os.getenv("GEMINI_API_KEY", "")
 if not API_KEY:
     raise RuntimeError("GEMINI_API_KEY environment variable is not set.")
 
-# Use direct REST API — works with any installed package version,
-# no SDK version conflicts, hits v1 (not v1beta), correct model name
-MODEL_NAME   = "gemma-3-1b-it"
-_API_URL     = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent"
-_API_HEADERS = {"Content-Type": "application/json"}
+# Direct REST API — no SDK, no model name mangling, no version conflicts
+# gemini-2.0-flash-lite: fastest free-tier model confirmed on this API key
+MODEL_NAME = "gemini-2.0-flash-lite"
+_API_URL   = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent"
 
 
 # ── Main chat function ────────────────────────────────────────────────────────
@@ -140,10 +139,10 @@ def extract_table_from_html(html_content: str, chat_text: str) -> dict:
                 self.rows         = []
 
             def handle_starttag(self, tag, attrs):
-                if tag == "table":                        self.in_table = True
-                elif tag == "tr"  and self.in_table:      self.in_row = True; self.current_row = []
-                elif tag == "th"  and self.in_row:        self.in_cell = True; self.is_header = True;  self.current_cell = ""
-                elif tag == "td"  and self.in_row:        self.in_cell = True; self.is_header = False; self.current_cell = ""
+                if tag == "table":                   self.in_table = True
+                elif tag == "tr" and self.in_table:  self.in_row = True; self.current_row = []
+                elif tag == "th" and self.in_row:    self.in_cell = True; self.is_header = True;  self.current_cell = ""
+                elif tag == "td" and self.in_row:    self.in_cell = True; self.is_header = False; self.current_cell = ""
 
             def handle_endtag(self, tag):
                 if tag in ("th", "td") and self.in_cell:
@@ -178,10 +177,10 @@ def extract_table_from_html(html_content: str, chat_text: str) -> dict:
                     values.append(float(len(values) + 1) * 10)
             return {
                 "headers": parser.headers, "rows": parser.rows,
-                "labels": labels, "values": values,
-                "xLabel": parser.headers[0] if parser.headers else "Category",
-                "yLabel": parser.headers[1] if len(parser.headers) > 1 else "Value",
-                "source": "html_table"
+                "labels":  labels,         "values": values,
+                "xLabel":  parser.headers[0] if parser.headers else "Category",
+                "yLabel":  parser.headers[1] if len(parser.headers) > 1 else "Value",
+                "source":  "html_table"
             }
 
         plain = _strip_html(html_content)
@@ -202,7 +201,10 @@ TEXT:
 Return ONLY a raw JSON object (no markdown, no code blocks):
 {{
   "headers": ["Column1", "Column2", "Column3"],
-  "rows": [["row1col1", "row1col2", "row1col3"], ["row2col1", "row2col2", "row2col3"]],
+  "rows": [
+    ["row1col1", "row1col2", "row1col3"],
+    ["row2col1", "row2col2", "row2col3"]
+  ],
   "labels": ["row1col1", "row2col1"],
   "values": [10, 20],
   "xLabel": "Column1",
@@ -213,6 +215,7 @@ Rules:
 - headers = meaningful column names from the content
 - rows = actual data rows (at least 2, max 10)
 - For comparison text: headers = ["Feature", "Item A", "Item B", ...]
+  rows = [["feature name", "value for A", "value for B"], ...]
 - labels = first column of each row
 - values = best numeric representation of each row (for chart use)
 - Never return empty arrays
@@ -221,8 +224,8 @@ Rules:
         raw = re.sub(r"^```json\s*|^```\s*|\s*```$", "", raw).strip()
         data    = json.loads(raw)
         headers = data.get("headers", [])
-        rows    = data.get("rows", [])
-        labels  = data.get("labels", [r[0] for r in rows if r])
+        rows    = data.get("rows",    [])
+        labels  = data.get("labels",  [r[0] for r in rows if r])
         values  = []
         for v in data.get("values", []):
             try:    values.append(float(str(v).replace(",", "")))
@@ -231,9 +234,9 @@ Rules:
             raise ValueError("Empty table from Gemini")
         return {
             "headers": headers, "rows": rows, "labels": labels, "values": values,
-            "xLabel": headers[0] if headers else "Category",
-            "yLabel": headers[1] if len(headers) > 1 else "Value",
-            "source": "gemini_generated"
+            "xLabel":  headers[0] if headers else "Category",
+            "yLabel":  headers[1] if len(headers) > 1 else "Value",
+            "source":  "gemini_generated"
         }
     except Exception:
         return {
@@ -307,12 +310,15 @@ def generate_viz_explanation(viz_type: str, chart_type: str,
     try:
         if viz_type == "table":
             data_desc = f"Table headers: {headers}\nRows (first 5): {rows[:5]}"
-            task      = "Explain what this table shows. Describe key comparisons, patterns, or insights from the data."
+            task      = ("Explain what this table shows. Describe key comparisons, "
+                         "patterns, or insights from the data.")
         else:
             type_name = chart_type or "bar"
             pairs     = ", ".join(f"{l}={v}" for l, v in zip(labels[:8], values[:8]))
-            data_desc = f"{type_name.capitalize()} chart. X-axis: {xLabel}, Y-axis: {yLabel}. Data: {pairs}"
-            task      = f"Explain what this {type_name} chart shows. Describe key trends, highest/lowest values, and meaning."
+            data_desc = (f"{type_name.capitalize()} chart. "
+                         f"X-axis: {xLabel}, Y-axis: {yLabel}. Data: {pairs}")
+            task      = (f"Explain what this {type_name} chart shows. "
+                         "Describe key trends, highest/lowest values, and meaning.")
 
         prompt = f"""You are explaining a data visualization.
 
@@ -364,7 +370,7 @@ def _call_with_retry(prompt: str, as_html: bool = True) -> str:
         try:
             resp = _requests.post(
                 _API_URL,
-                headers=_API_HEADERS,
+                headers={"Content-Type": "application/json"},
                 params={"key": API_KEY},
                 json={
                     "contents": [{"parts": [{"text": prompt}]}],
