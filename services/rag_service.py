@@ -17,10 +17,11 @@ PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "chatbot-rag")
 PINECONE_INDEX_HOST = os.getenv("PINECONE_INDEX_HOST", "")
 GEMINI_API_KEY      = os.getenv("GEMINI_API_KEY", "")
 
-# Embedding model — text-embedding-004 produces 768-dim vectors
-# Your Pinecone index MUST be created with dimension=768
-_EMBED_URL  = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent"
-EMBED_DIM   = 768
+# Embedding model — gemini-embedding-001 produces 3072-dim vectors
+# Pinecone index MUST be created with dimension=3072
+_EMBED_MODEL = "gemini-embedding-001"
+_EMBED_URL   = f"https://generativelanguage.googleapis.com/v1beta/models/{_EMBED_MODEL}:embedContent"
+EMBED_DIM    = 3072
 
 # ── Lazy Pinecone init ────────────────────────────────────────────────────────
 _pc_index = None
@@ -48,7 +49,7 @@ def _get_index():
 
 def _embed(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list:
     """
-    Generate 768-dim embedding using Gemini text-embedding-004 via REST.
+    Generate 3072-dim embedding using gemini-embedding-001 via REST.
     Raises on failure so caller knows exactly what went wrong.
     """
     clean = re.sub(r"\s+", " ", text).strip()[:8000]
@@ -59,7 +60,7 @@ def _embed(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list:
                 headers={"Content-Type": "application/json"},
                 params={"key": GEMINI_API_KEY},
                 json={
-                    "model":   "models/text-embedding-004",
+                    "model":   f"models/{_EMBED_MODEL}",
                     "content": {"parts": [{"text": clean}]},
                     "taskType": task_type
                 },
@@ -69,7 +70,7 @@ def _embed(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list:
                 time.sleep(3 * (attempt + 1))
                 continue
             if not resp.ok:
-                raise RuntimeError(f"Embedding API error {resp.status_code}: {resp.text[:200]}")
+                raise RuntimeError(f"Embedding API {resp.status_code}: {resp.text[:200]}")
             values = resp.json().get("embedding", {}).get("values", [])
             if not values:
                 raise RuntimeError("Empty embedding returned")

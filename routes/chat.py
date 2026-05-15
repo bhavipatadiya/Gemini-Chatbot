@@ -345,6 +345,59 @@ async def get_me(request: Request):
     return {"user_id":uid,"is_anonymous":uid=="anonymous"}
 
 
+@router.get("/rag/status")
+async def rag_status(request: Request):
+    """
+    Debug endpoint — verifies the full RAG pipeline is working.
+    Visit /rag/status after login to confirm Pinecone + embedding are connected.
+    """
+    uid = _get_user_id(request)
+    result = {
+        "user_id":          uid,
+        "pinecone_key_set": False,
+        "gemini_key_set":   False,
+        "pinecone_connected": False,
+        "embedding_works":  False,
+        "index_stats":      {},
+        "errors":           []
+    }
+    try:
+        import os
+        result["pinecone_key_set"] = bool(os.getenv("PINECONE_API_KEY",""))
+        result["gemini_key_set"]   = bool(os.getenv("GEMINI_API_KEY",""))
+
+        from services.rag_service import _get_index, _embed, pinecone_available
+        if not pinecone_available():
+            result["errors"].append("PINECONE_API_KEY not set")
+            return result
+
+        # Test Pinecone connection
+        try:
+            index = _get_index()
+            stats = index.describe_index_stats()
+            result["pinecone_connected"] = True
+            result["index_stats"] = {
+                "total_vectors": stats.total_vector_count,
+                "dimension":     stats.dimension,
+                "namespaces":    {k: v.vector_count for k,v in stats.namespaces.items()}
+            }
+        except Exception as e:
+            result["errors"].append(f"Pinecone connection failed: {e}")
+
+        # Test embedding
+        try:
+            vec = _embed("test connection")
+            result["embedding_works"] = True
+            result["embedding_dim"]   = len(vec)
+        except Exception as e:
+            result["errors"].append(f"Embedding failed: {e}")
+
+    except Exception as e:
+        result["errors"].append(str(e))
+
+    return result
+
+
 # ── RAG / Knowledge Base endpoints ───────────────────────────────────────────
 
 @router.post("/upload_knowledge")
