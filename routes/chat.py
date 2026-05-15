@@ -581,8 +581,7 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
     """
     Upload PDF for chat context.
     - Extracts text and returns it for immediate in-chat use (existing behaviour)
-    - Also indexes the full text to Pinecone in the background so future
-      questions about this PDF are answered via RAG (persistent, per-user)
+    - Synchronously indexes first 20 chunks to Pinecone (fast, ~5s)
     """
     global CURRENT_PDF_TEXT
     uid = _get_user_id(request)
@@ -596,7 +595,7 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
         try:
             import fitz
         except ImportError:
-            raise HTTPException(status_code=500, detail="PyMuPDF not installed. Run: pip install pymupdf")
+            raise HTTPException(status_code=500, detail="PyMuPDF not installed.")
 
         doc        = fitz.open(stream=contents, filetype="pdf")
         page_count = doc.page_count
@@ -606,38 +605,35 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
         if not full_text:
             raise HTTPException(status_code=400, detail="PDF has no readable text.")
 
-        # Store truncated version for immediate in-chat use (existing behaviour)
         chat_text        = full_text[:12000]
         CURRENT_PDF_TEXT = chat_text
 
-        # Index full text to Pinecone in background (non-blocking)
-        # so the user gets an instant response and RAG works for future questions
+        # Index to Pinecone synchronously — limited to first 8000 chars (fast)
+        indexed_chunks = 0
+        index_error    = None
         try:
             from services.rag_service import upsert_document, pinecone_available
             if pinecone_available():
-                import threading, uuid as _uuid
-                _doc_id   = _uuid.uuid4().hex[:12]
-                _filename = file.filename
-                _text     = full_text[:50000]
-                _uid      = uid   # capture for thread closure
-
-                def _index_bg():
-                    try:
-                        result = upsert_document(
-                            doc_id   = _doc_id,
-                            text     = _text,
-                            filename = _filename,
-                            user_id  = _uid
-                        )
-                        print(f"[RAG] ✓ Indexed '{_filename}': {result['chunks']} chunks → namespace '{result.get('namespace','?')}'")
-                    except Exception as e:
-                        print(f"[RAG] ✗ Index failed for '{_filename}': {e}")
-
-                threading.Thread(target=_index_bg, daemon=True).start()
+                import uuid as _uuid
+                result = upsert_document(
+                    doc_id   = _uuid.uuid4().hex[:12],
+                    text     = full_text[:8000],   # first 8000 chars = ~20 chunks, fast
+                    filename = file.filename,
+                    user_id  = uid
+                )
+                indexed_chunks = result.get("chunks", 0)
+                print(f"[RAG] ✓ Indexed '{file.filename}': {indexed_chunks} chunks, namespace='{result.get('namespace','?')}'")
         except Exception as e:
-            print(f"[RAG] Index setup error: {e}")
+            index_error = str(e)
+            print(f"[RAG] ✗ Index failed for '{file.filename}': {e}")
 
-        return {"filename": file.filename, "content": chat_text, "pages": page_count}
+        return {
+            "filename":      file.filename,
+            "content":       chat_text,
+            "pages":         page_count,
+            "indexed_chunks": indexed_chunks,
+            "index_error":   index_error
+        }
     except HTTPException: raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process PDF: {e}")
