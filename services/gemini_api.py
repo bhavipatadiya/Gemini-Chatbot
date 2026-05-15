@@ -193,7 +193,6 @@ def extract_table_from_html(html_content: str, chat_text: str) -> dict:
     except Exception:
         return _ask_gemini_for_table(chat_text)
 
-
 def _ask_gemini_for_table(text: str) -> dict:
     try:
         prompt = f"""You are a data structuring assistant.
@@ -249,7 +248,6 @@ Rules:
             "labels":  ["A","B","C","D"], "values": [40.0, 70.0, 55.0, 85.0],
             "xLabel":  "Item", "yLabel": "Value", "source": "fallback"
         }
-
 
 # ── Chart data extraction ─────────────────────────────────────────────────────
 
