@@ -611,18 +611,22 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
         # Index to Pinecone synchronously — limited to first 8000 chars (fast)
         indexed_chunks = 0
         index_error    = None
+        print(f"[RAG] Starting index for '{file.filename}', uid='{uid}', text_len={len(full_text)}")
         try:
             from services.rag_service import upsert_document, pinecone_available
-            if pinecone_available():
+            if not pinecone_available():
+                index_error = "PINECONE_API_KEY not set"
+                print(f"[RAG] Skipping — Pinecone not configured")
+            else:
                 import uuid as _uuid
                 result = upsert_document(
                     doc_id   = _uuid.uuid4().hex[:12],
-                    text     = full_text[:8000],   # first 8000 chars = ~20 chunks, fast
+                    text     = full_text[:8000],
                     filename = file.filename,
                     user_id  = uid
                 )
                 indexed_chunks = result.get("chunks", 0)
-                print(f"[RAG] ✓ Indexed '{file.filename}': {indexed_chunks} chunks, namespace='{result.get('namespace','?')}'")
+                print(f"[RAG] ✓ Indexed '{file.filename}': {indexed_chunks} chunks → namespace='{result.get('namespace','?')}'")
         except Exception as e:
             index_error = str(e)
             print(f"[RAG] ✗ Index failed for '{file.filename}': {e}")
