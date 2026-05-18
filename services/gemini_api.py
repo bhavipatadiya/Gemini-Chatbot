@@ -13,17 +13,12 @@ API_KEY = os.getenv("GEMINI_API_KEY", "")
 if not API_KEY:
     raise RuntimeError("GEMINI_API_KEY environment variable is not set.")
 
-# Direct REST API — no SDK, no model name mangling, no version conflicts
-# All models confirmed available on this API key via list_models
 _MODELS = [
-    "gemini-2.0-flash-lite",   # fastest free-tier, primary
-    "gemini-2.0-flash",        # fallback 1
-    "gemini-2.5-flash",        # fallback 2 — confirmed on this key
+    "gemini-2.0-flash-lite",  
+    "gemini-2.0-flash",       
+    "gemini-2.5-flash",       
 ]
 _API_BASE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-
-
-# ── Main chat function ────────────────────────────────────────────────────────
 
 def call_gemini_api(
     message:              str,
@@ -127,9 +122,6 @@ STRICT RESPONSE RULES — follow exactly:
 
     except Exception as e:
         raise Exception(f"Gemini Error: {str(e)}")
-
-
-# ── Table extraction ──────────────────────────────────────────────────────────
 
 def extract_table_from_html(html_content: str, chat_text: str) -> dict:
     try:
@@ -249,7 +241,6 @@ Rules:
             "xLabel":  "Item", "yLabel": "Value", "source": "fallback"
         }
 
-# ── Chart data extraction ─────────────────────────────────────────────────────
 
 def extract_chart_data(chat_text: str) -> dict:
     try:
@@ -302,9 +293,6 @@ Rules:
             "rows":    [["A","40"],["B","70"],["C","55"],["D","85"]]
         }
 
-
-# ── Visualization explanation ─────────────────────────────────────────────────
-
 def generate_viz_explanation(viz_type: str, chart_type: str,
                               labels: list, values: list,
                               xLabel: str, yLabel: str,
@@ -341,7 +329,7 @@ Return ONLY valid HTML in this exact format (no extra text outside HTML):
       <li>Key point here</li>
       <li>Supporting detail</li>
     </ul>
-  </li>
+  </li> 
 </ol>
 
 Rules:
@@ -357,9 +345,6 @@ Rules:
     except Exception:
         return "<p>Could not generate explanation for this visualization.</p>"
 
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
-
 def _strip_html(html: str) -> str:
     return re.sub(r"<[^>]+>", " ", html).strip()
 
@@ -372,7 +357,7 @@ def _call_with_retry(prompt: str, as_html: bool = True) -> str:
     Prompt is truncated to 6000 chars to avoid timeouts on large inputs.
     """
     last_err = None
-    # Truncate prompt to avoid slow responses / timeouts on free tier
+
     prompt = prompt[:6000] if len(prompt) > 6000 else prompt
 
     for model_name in _MODELS:
@@ -393,7 +378,7 @@ def _call_with_retry(prompt: str, as_html: bool = True) -> str:
                             "maxOutputTokens": 1024
                         }
                     },
-                    timeout=30   # 30s — enough for free tier, avoids long hangs
+                    timeout=30   
                 )
 
                 if resp.status_code == 429:
@@ -407,7 +392,6 @@ def _call_with_retry(prompt: str, as_html: bool = True) -> str:
                     last_err = f"404 model not found: {model_name}"
                     break
 
-                # 500 server error — skip to next model
                 if resp.status_code >= 500:
                     last_err = f"{resp.status_code} server error on {model_name}"
                     break
@@ -430,7 +414,7 @@ def _call_with_retry(prompt: str, as_html: bool = True) -> str:
 
             except _requests.exceptions.Timeout:
                 last_err = f"Timeout on {model_name}"
-                break   # try next model immediately on timeout
+                break  
             except _requests.exceptions.HTTPError:
                 raise
             except Exception as e:

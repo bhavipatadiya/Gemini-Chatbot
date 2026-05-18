@@ -1,6 +1,3 @@
-"""
-routes.py — FastAPI routes with full RAG (Pinecone) support
-"""
 import json
 import os
 import re as _re
@@ -24,9 +21,6 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 CURRENT_PDF_TEXT = ""
-
-
-# ── User helpers ──────────────────────────────────────────────────────────────
 
 def _user_file(user_id: str) -> str:
     safe = _re.sub(r"[^a-zA-Z0-9_\-]", "_", user_id)
@@ -59,9 +53,6 @@ def _clean_json(raw: str) -> list:
     if not isinstance(parsed, list): raise ValueError("not a list")
     return parsed
 
-
-# ── RAG helper ────────────────────────────────────────────────────────────────
-
 def _get_rag_context(message: str, user_id: str) -> str:
     """
     Query Pinecone for relevant chunks and build context string.
@@ -77,9 +68,6 @@ def _get_rag_context(message: str, user_id: str) -> str:
         print(f"[RAG] Context retrieval failed: {e}")
         return ""
 
-
-# ── Chat endpoint ─────────────────────────────────────────────────────────────
-
 def process_chat_request(data: dict, user_id: str = "anonymous"):
     global CURRENT_PDF_TEXT
     message              = data.get("message", "").strip()
@@ -87,7 +75,7 @@ def process_chat_request(data: dict, user_id: str = "anonymous"):
     use_pdf              = data.get("use_pdf", False)
     conversation_history = data.get("conversation_history", [])
     topic_lock           = data.get("topic_lock") or None
-    use_rag              = data.get("use_rag", True)   # frontend can disable
+    use_rag              = data.get("use_rag", True)  
 
     if not message:
         raise HTTPException(status_code=400, detail="Message cannot be empty")
@@ -95,17 +83,15 @@ def process_chat_request(data: dict, user_id: str = "anonymous"):
     if pdf_text:
         CURRENT_PDF_TEXT = pdf_text
 
-    # PDF mode: use uploaded PDF text + RAG from Pinecone for best answer
     if use_pdf:
         active_pdf = pdf_text or CURRENT_PDF_TEXT
         rag_context = ""
 
-        # Also pull relevant chunks from Pinecone (previously indexed PDFs)
         if use_rag and user_id != "anonymous":
             rag_context = _get_rag_context(message, user_id)
 
         if active_pdf:
-            # Combine: direct PDF text (current upload) + Pinecone context (past uploads)
+    
             pdf_section = f"PDF Content:\n{active_pdf[:4000]}"
             rag_section = f"\n\n{rag_context}" if rag_context else ""
             final_prompt = (
@@ -121,7 +107,6 @@ def process_chat_request(data: dict, user_id: str = "anonymous"):
             )
         return ChatResponse(reply=reply)
 
-    # Normal mode: check Pinecone for relevant context
     rag_context = ""
     if use_rag and user_id != "anonymous":
         rag_context = _get_rag_context(message, user_id)
@@ -140,9 +125,6 @@ async def chat_endpoint(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# ── Visualization endpoints ───────────────────────────────────────────────────
-
 @router.post("/extract_viz")
 async def extract_viz(request: Request):
     try:
@@ -160,7 +142,6 @@ async def extract_viz(request: Request):
                 "headers":["Category","Value"],"rows":[["A","30"],["B","60"],["C","45"],["D","75"]]
             }
 
-        # Include explanation in same response (no extra API call)
         result["explanation"] = generate_viz_explanation(
             viz_type, data.get("chart_type","bar"),
             result.get("labels",[]), result.get("values",[]),
@@ -170,9 +151,6 @@ async def extract_viz(request: Request):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-# ── Chat CRUD ─────────────────────────────────────────────────────────────────
 
 @router.get("/chats")
 def get_chats(request: Request):
@@ -263,9 +241,6 @@ async def delete_chat(chat_id: int, request: Request):
     save_chats(chats, uid)
     return {"status":"deleted"}
 
-
-# ── Share endpoints ───────────────────────────────────────────────────────────
-
 @router.post("/share/{chat_id}")
 async def share_chat(chat_id: int, request: Request):
     uid = _get_user_id(request); chats = load_chats(uid)
@@ -321,9 +296,6 @@ async def shared_chat_endpoint(request: Request, share_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# ── Utility endpoints ─────────────────────────────────────────────────────────
-
 @router.post("/generate_title")
 async def generate_title(request: Request):
     try:
@@ -370,8 +342,7 @@ async def rag_status(request: Request):
         if not pinecone_available():
             result["errors"].append("PINECONE_API_KEY not set")
             return result
-
-        # Test Pinecone connection
+        
         try:
             index = _get_index()
             stats = index.describe_index_stats()
@@ -384,7 +355,6 @@ async def rag_status(request: Request):
         except Exception as e:
             result["errors"].append(f"Pinecone connection failed: {e}")
 
-        # Test embedding
         try:
             vec = _embed("test connection")
             result["embedding_works"] = True
@@ -396,9 +366,6 @@ async def rag_status(request: Request):
         result["errors"].append(str(e))
 
     return result
-
-
-# ── RAG / Knowledge Base endpoints ───────────────────────────────────────────
 
 @router.post("/upload_knowledge")
 async def upload_knowledge(request: Request, file: UploadFile = File(...)):
@@ -434,7 +401,7 @@ async def upload_knowledge(request: Request, file: UploadFile = File(...)):
         doc_id = uuid.uuid4().hex[:12]
         result = upsert_document(
             doc_id   = doc_id,
-            text     = text[:50000],   # generous limit for knowledge base
+            text     = text[:50000],  
             filename = file.filename,
             user_id  = uid
         )
@@ -608,7 +575,6 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
         chat_text        = full_text[:12000]
         CURRENT_PDF_TEXT = chat_text
 
-        # Index to Pinecone synchronously — limited to first 8000 chars (fast)
         indexed_chunks = 0
         index_error    = None
         print(f"[RAG] Starting index for '{file.filename}', uid='{uid}', text_len={len(full_text)}")
