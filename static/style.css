@@ -2583,38 +2583,64 @@ body.light-mode .ncs-chip:hover {
 }
 
 
-/* ── Regenerate response button ─────────────────────────────── */
-.regen-btn {
+/* ── Bot message toolbar (copy + nav + regenerate) ──────────── */
+.msg-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin: 2px 0 6px 2px;
+    opacity: 0;
+    transition: opacity .15s;
+}
+/* Show toolbar when hovering the bot message or toolbar itself */
+.msg.bot:hover + .msg-toolbar,
+.msg-toolbar:hover {
+    opacity: 1;
+}
+.tb-btn {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    margin: 4px 0 8px 4px;
-    padding: 4px 10px;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
     background: transparent;
-    border: 1px solid rgba(255,255,255,0.15);
+    border: none;
     border-radius: 6px;
-    color: rgba(255,255,255,0.45);
-    font-size: 12px;
+    color: rgba(255,255,255,0.4);
     cursor: pointer;
-    transition: background .15s, color .15s, border-color .15s;
+    transition: background .12s, color .12s;
 }
-.regen-btn:hover {
-    background: rgba(25,195,125,0.1);
-    border-color: var(--user-msg, #19c37d);
-    color: var(--user-msg, #19c37d);
+.tb-btn:hover {
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.85);
 }
-.regen-btn svg {
+.tb-btn svg {
+    width: 14px;
+    height: 14px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
     flex-shrink: 0;
 }
-body.light-mode .regen-btn {
-    border-color: rgba(0,0,0,0.15);
-    color: rgba(0,0,0,0.4);
+.tb-counter {
+    font-size: 11px;
+    color: rgba(255,255,255,0.4);
+    padding: 0 2px;
+    min-width: 28px;
+    text-align: center;
+    user-select: none;
 }
-body.light-mode .regen-btn:hover {
-    background: rgba(23,184,112,0.08);
-    border-color: #17b870;
-    color: #17b870;
-}
+.tb-regen:hover { color: #19c37d; }
+.tb-copy:hover  { color: #3b82f6; }
+
+body.light-mode .tb-btn        { color: rgba(0,0,0,0.35); }
+body.light-mode .tb-btn:hover  { background: rgba(0,0,0,0.06); color: rgba(0,0,0,0.75); }
+body.light-mode .tb-counter    { color: rgba(0,0,0,0.35); }
+body.light-mode .tb-regen:hover { color: #17b870; }
+body.light-mode .tb-copy:hover  { color: #2563eb; }
 
 /* ── Login screen — returning user hint ─────────────────────── */
 .auth-user-hint {

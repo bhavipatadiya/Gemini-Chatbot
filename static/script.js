@@ -867,60 +867,138 @@ function renderBotMessage(msg, container) {
             const ed = document.createElement("div"); ed.className = "viz-explanation"; ed.innerHTML = msg.viz_explanation; vs.appendChild(ed);
         }
     }
-    // Add regenerate button below bot message
-    _appendRegenerateBtn(wrapper, msg.msgId);
+    _appendMsgToolbar(wrapper, msg.msgId);
 }
 
-function _appendRegenerateBtn(wrapper, msgId) {
-    // Remove existing button if any
-    const existing = wrapper.parentNode && wrapper.parentNode.querySelector(`.regen-btn[data-for="${msgId}"]`);
+// ── Per-message response history (for < 1/2 > navigation) ────
+const _msgHistory = {};  // msgId → { versions: [html,...], current: 0 }
+
+function _appendMsgToolbar(wrapper, msgId) {
+    const existing = wrapper.parentNode && wrapper.parentNode.querySelector(`.msg-toolbar[data-for="${msgId}"]`);
     if (existing) existing.remove();
 
-    const btn = document.createElement("button");
-    btn.className = "regen-btn";
-    btn.dataset.for = msgId;
-    btn.title = "Regenerate response";
-    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/></svg> Regenerate`;
-    btn.addEventListener("click", () => _regenerateResponse(msgId));
-    // Insert after the wrapper
-    if (wrapper.parentNode) wrapper.parentNode.insertBefore(btn, wrapper.nextSibling);
+    // Init history entry if not exists
+    if (!_msgHistory[msgId]) {
+        _msgHistory[msgId] = { versions: [wrapper.innerHTML.replace(/<div class="msg-viz-section[\s\S]*/, "").trim()], current: 0 };
+    }
+
+    const hist    = _msgHistory[msgId];
+    const total   = hist.versions.length;
+    const current = hist.current + 1;
+
+    const toolbar = document.createElement("div");
+    toolbar.className = "msg-toolbar";
+    toolbar.dataset.for = msgId;
+
+    // Navigation (only show if more than 1 version)
+    const navHtml = total > 1
+        ? `<button class="tb-btn tb-prev" title="Previous response" onclick="_navResponse('${msgId}',-1)">
+               <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+           </button>
+           <span class="tb-counter">${current}/${total}</span>
+           <button class="tb-btn tb-next" title="Next response" onclick="_navResponse('${msgId}',1)">
+               <svg viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"/></svg>
+           </button>`
+        : "";
+
+    toolbar.innerHTML = `
+        ${navHtml}
+        <button class="tb-btn tb-copy" title="Copy" onclick="_copyMsg('${msgId}')">
+            <svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+        <button class="tb-btn tb-regen" title="Regenerate response" onclick="_regenerateResponse('${msgId}')">
+            <svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/></svg>
+        </button>`;
+
+    if (wrapper.parentNode) wrapper.parentNode.insertBefore(toolbar, wrapper.nextSibling);
+}
+
+function _navResponse(msgId, dir) {
+    const hist = _msgHistory[msgId];
+    if (!hist || hist.versions.length <= 1) return;
+    hist.current = (hist.current + dir + hist.versions.length) % hist.versions.length;
+    const wrapper = document.getElementById(msgId);
+    if (wrapper) {
+        wrapper.innerHTML = hist.versions[hist.current];
+        wrapTables(wrapper);
+    }
+    _appendMsgToolbar(wrapper, msgId);
+}
+
+function _copyMsg(msgId) {
+    const wrapper = document.getElementById(msgId);
+    if (!wrapper) return;
+    const text = wrapper.innerText || wrapper.textContent || "";
+    navigator.clipboard.writeText(text).catch(() => {
+        const ta = document.createElement("textarea");
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        document.execCommand("copy"); document.body.removeChild(ta);
+    });
+    // Brief visual feedback
+    const btn = document.querySelector(`.msg-toolbar[data-for="${msgId}"] .tb-copy`);
+    if (btn) { btn.style.color = "#19c37d"; setTimeout(() => btn.style.color = "", 1000); }
 }
 
 async function _regenerateResponse(msgId) {
-    // Find the bot message index in currentChat
     const botIdx = currentChat.findIndex(m => m.msgId === msgId);
     if (botIdx < 0) return;
 
-    // Find the user message just before this bot message
     let userMsg = null;
     for (let i = botIdx - 1; i >= 0; i--) {
         if (currentChat[i].role === "user") { userMsg = currentChat[i]; break; }
     }
     if (!userMsg) return;
 
-    // Remove this bot message and everything after from DOM
     const chatBox  = document.getElementById("chat-box");
     const wrapper  = document.getElementById(msgId);
-    const regenBtn = chatBox.querySelector(`.regen-btn[data-for="${msgId}"]`);
-    if (regenBtn) regenBtn.remove();
+    const toolbar  = chatBox.querySelector(`.msg-toolbar[data-for="${msgId}"]`);
 
-    // Remove all DOM elements from this bot message onwards
-    if (wrapper) {
-        let el = wrapper;
-        while (el) {
-            const next = el.nextSibling;
-            el.remove();
-            el = next;
-        }
+    // Remove toolbar temporarily
+    if (toolbar) toolbar.remove();
+
+    // Show loading inside the existing wrapper
+    wrapper.innerHTML = `<span></span><span></span><span></span>`;
+    wrapper.classList.add("loading");
+    scrollToBottom();
+
+    try {
+        const pdfContent = currentChatPDFs.map(p => p.content).join("\n\n---\n\n");
+        const history    = currentChat.slice(0, botIdx).filter(m => !m.vizType && m.content).slice(-10).map(m => ({ role:m.role, content:m.content }));
+        const endpoint   = isSharedView ? "/shared/chat/"+sharedToken : "/chat";
+        const res = await _apiFetch(endpoint, {
+            method: "POST", headers: { "Content-Type":"application/json" },
+            body: JSON.stringify({
+                message: userMsg.content, pdf_text: pdfContent,
+                use_pdf: currentChatPDFs.length > 0,
+                conversation_history: history,
+                topic_lock: currentTopic || null
+            })
+        });
+        if (!res.ok) { const err = await res.json().catch(()=>({})); throw new Error(err.detail||`Server error ${res.status}`); }
+        const data      = await res.json();
+        const replyHtml = data.reply || "<p>Sorry, no response received.</p>";
+
+        wrapper.classList.remove("loading");
+        wrapper.innerHTML = "";
+
+        typewriterAnimate(wrapper, replyHtml, () => {
+            // Store new version in history
+            if (!_msgHistory[msgId]) _msgHistory[msgId] = { versions: [], current: 0 };
+            _msgHistory[msgId].versions.push(replyHtml);
+            _msgHistory[msgId].current = _msgHistory[msgId].versions.length - 1;
+
+            // Update currentChat with new response
+            currentChat[botIdx] = { ...currentChat[botIdx], content: replyHtml };
+
+            wrapTables(wrapper); scrollToBottom();
+            _appendMsgToolbar(wrapper, msgId);
+            if (!isSharedView) saveCurrentChat();
+        });
+    } catch(err) {
+        wrapper.classList.remove("loading");
+        wrapper.innerHTML = `<p style="color:#e03e3e">Regenerate failed: ${err.message}</p>`;
+        _appendMsgToolbar(wrapper, msgId);
     }
-
-    // Trim currentChat to just before this bot message
-    // This keeps all previous messages (user + bot) intact in history
-    currentChat.splice(botIdx);
-
-    // Re-send — _sendAndAppend will push the new bot message to currentChat
-    // and call saveCurrentChat() so the new response is saved
-    await _sendAndAppend(userMsg.content, chatBox, false);
 }
 
 async function _sendAndAppend(msg, chatBox, isEdit = false) {
@@ -947,7 +1025,9 @@ async function _sendAndAppend(msg, chatBox, isEdit = false) {
         chatBox.appendChild(wrapper);
         typewriterAnimate(wrapper, replyHtml, () => {
             currentChat.push(botMsg); wrapTables(wrapper); scrollToBottom();
-            _appendRegenerateBtn(wrapper, botMsg.msgId);
+            // Init version history for this message
+            _msgHistory[botMsg.msgId] = { versions: [replyHtml], current: 0 };
+            _appendMsgToolbar(wrapper, botMsg.msgId);
             if (isSharedView) return;
             saveCurrentChat();
             _S.ccList  = [];
@@ -1337,7 +1417,9 @@ async function sendMessage() {
         chatBox.appendChild(wrapper);
         typewriterAnimate(wrapper,replyHtml,()=>{
             currentChat.push(botMsg); wrapTables(wrapper); scrollToBottom();
-            _appendRegenerateBtn(wrapper, botMsg.msgId);
+            // Init version history for this message
+            _msgHistory[botMsg.msgId] = { versions: [replyHtml], current: 0 };
+            _appendMsgToolbar(wrapper, botMsg.msgId);
             if (isSharedView) return;
             let tp=Promise.resolve(currentTitle);
             if (!currentTitle) {
