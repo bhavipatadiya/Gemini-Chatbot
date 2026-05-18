@@ -34,7 +34,13 @@ async function initAuth() {
         if (ok) {
             showApp();   
         } else {
-            showLoginScreen();  
+            // Check if we have a cached user from previous session
+            // and show their name on the login screen
+            try {
+                const user = await auth0Client.getUser();
+                if (user) _showLoginUserHint(user);
+            } catch(e) {}
+            showLoginScreen();
         }
     } catch(e) {
 
@@ -88,6 +94,23 @@ function showApp() {
     document.getElementById("auth-overlay").style.display = "none";
     document.getElementById("main-app").style.display     = "flex";
     initApp();
+}
+
+function _showLoginUserHint(user) {
+    // Show returning user's name/avatar on the login card
+    const card = document.querySelector(".auth-card");
+    if (!card || !user) return;
+    const existing = card.querySelector(".auth-user-hint");
+    if (existing) existing.remove();
+    const hint = document.createElement("div");
+    hint.className = "auth-user-hint";
+    const pic = user.picture
+        ? `<img src="${user.picture}" alt="" class="auth-user-pic" onerror="this.style.display='none'">`
+        : "";
+    hint.innerHTML = `${pic}<span>Welcome back, <strong>${user.name || user.email || "User"}</strong></span>`;
+    // Insert before the login button
+    const btn = card.querySelector("#login-btn");
+    if (btn) card.insertBefore(hint, btn);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -844,6 +867,58 @@ function renderBotMessage(msg, container) {
             const ed = document.createElement("div"); ed.className = "viz-explanation"; ed.innerHTML = msg.viz_explanation; vs.appendChild(ed);
         }
     }
+    // Add regenerate button below bot message
+    _appendRegenerateBtn(wrapper, msg.msgId);
+}
+
+function _appendRegenerateBtn(wrapper, msgId) {
+    // Remove existing button if any
+    const existing = wrapper.parentNode && wrapper.parentNode.querySelector(`.regen-btn[data-for="${msgId}"]`);
+    if (existing) existing.remove();
+
+    const btn = document.createElement("button");
+    btn.className = "regen-btn";
+    btn.dataset.for = msgId;
+    btn.title = "Regenerate response";
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/></svg> Regenerate`;
+    btn.addEventListener("click", () => _regenerateResponse(msgId));
+    // Insert after the wrapper
+    if (wrapper.parentNode) wrapper.parentNode.insertBefore(btn, wrapper.nextSibling);
+}
+
+async function _regenerateResponse(msgId) {
+    // Find the bot message index in currentChat
+    const botIdx = currentChat.findIndex(m => m.msgId === msgId);
+    if (botIdx < 0) return;
+
+    // Find the user message just before this bot message
+    let userMsg = null;
+    for (let i = botIdx - 1; i >= 0; i--) {
+        if (currentChat[i].role === "user") { userMsg = currentChat[i]; break; }
+    }
+    if (!userMsg) return;
+
+    // Remove this bot message and everything after from DOM and currentChat
+    const chatBox = document.getElementById("chat-box");
+    const wrapper = document.getElementById(msgId);
+    const regenBtn = chatBox.querySelector(`.regen-btn[data-for="${msgId}"]`);
+    if (regenBtn) regenBtn.remove();
+
+    // Remove all DOM elements from this bot message onwards
+    if (wrapper) {
+        let el = wrapper;
+        while (el) {
+            const next = el.nextSibling;
+            el.remove();
+            el = next;
+        }
+    }
+
+    // Trim currentChat to just before this bot message
+    currentChat.splice(botIdx);
+
+    // Re-send the user message
+    await _sendAndAppend(userMsg.content, chatBox, false);
 }
 
 async function _sendAndAppend(msg, chatBox, isEdit = false) {
@@ -870,6 +945,7 @@ async function _sendAndAppend(msg, chatBox, isEdit = false) {
         chatBox.appendChild(wrapper);
         typewriterAnimate(wrapper, replyHtml, () => {
             currentChat.push(botMsg); wrapTables(wrapper); scrollToBottom();
+            _appendRegenerateBtn(wrapper, botMsg.msgId);
             if (isSharedView) return;
             saveCurrentChat();
             _S.ccList  = [];
@@ -1259,6 +1335,7 @@ async function sendMessage() {
         chatBox.appendChild(wrapper);
         typewriterAnimate(wrapper,replyHtml,()=>{
             currentChat.push(botMsg); wrapTables(wrapper); scrollToBottom();
+            _appendRegenerateBtn(wrapper, botMsg.msgId);
             if (isSharedView) return;
             let tp=Promise.resolve(currentTitle);
             if (!currentTitle) {

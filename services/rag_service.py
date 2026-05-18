@@ -1,7 +1,3 @@
-"""
-rag_service.py — Pinecone RAG operations
-Handles: embedding (via REST), upserting, querying, deleting
-"""
 import os
 import re
 import time
@@ -11,19 +7,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Config ────────────────────────────────────────────────────────────────────
 PINECONE_API_KEY    = os.getenv("PINECONE_API_KEY", "")
 PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "chatbot-rag")
 PINECONE_INDEX_HOST = os.getenv("PINECONE_INDEX_HOST", "")
 GEMINI_API_KEY      = os.getenv("GEMINI_API_KEY", "")
 
-# Embedding model — gemini-embedding-001 produces 3072-dim vectors
-# Pinecone index MUST be created with dimension=3072
 _EMBED_MODEL = "gemini-embedding-001"
 _EMBED_URL   = f"https://generativelanguage.googleapis.com/v1beta/models/{_EMBED_MODEL}:embedContent"
 EMBED_DIM    = 3072
 
-# ── Lazy Pinecone init ────────────────────────────────────────────────────────
 _pc_index = None
 
 def _get_index():
@@ -43,9 +35,6 @@ def _get_index():
         return _pc_index
     except ImportError:
         raise RuntimeError("pinecone not installed. Run: pip install pinecone")
-
-
-# ── Embedding ─────────────────────────────────────────────────────────────────
 
 def _embed(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list:
     """
@@ -87,23 +76,26 @@ def _embed(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list:
 def _embed_query(text: str) -> list:
     return _embed(text, task_type="RETRIEVAL_QUERY")
 
-
-# ── Text chunking ─────────────────────────────────────────────────────────────
-
-def chunk_text(text: str, chunk_size: int = 400, overlap: int = 50) -> list:
-    """Split text into overlapping chunks."""
-    text   = re.sub(r"\s+", " ", text).strip()
+def chunk_text(text: str, chunk_size: int = 275, overlap: int = 30) -> list:
+    """
+    Split text into chunks of 250-300 words with overlap.
+    chunk_size: words per chunk (275 = midpoint of 250-300 range)
+    overlap: shared words between adjacent chunks for context continuity
+    """
+    text  = re.sub(r"\s+", " ", text).strip()
+    words = text.split()
+    if not words:
+        return []
     chunks = []
     start  = 0
-    while start < len(text):
-        chunk = text[start:start + chunk_size].strip()
-        if len(chunk) > 50:   # skip tiny chunks
+    while start < len(words):
+        chunk = " ".join(words[start:start + chunk_size]).strip()
+        if len(chunk) > 50:
             chunks.append(chunk)
         start += chunk_size - overlap
+        if start >= len(words):
+            break
     return chunks
-
-
-# ── Pinecone operations ───────────────────────────────────────────────────────
 
 def upsert_document(doc_id: str, text: str, filename: str,
                     user_id: str, metadata: dict = None) -> dict:
@@ -112,7 +104,7 @@ def upsert_document(doc_id: str, text: str, filename: str,
     Uses user_id as namespace for per-user isolation.
     Raises on failure — caller must handle errors.
     """
-    # Use "shared" namespace if user_id is empty/anonymous
+
     namespace = user_id if (user_id and user_id != "anonymous") else "shared"
 
     index  = _get_index()
@@ -148,7 +140,6 @@ def upsert_document(doc_id: str, text: str, filename: str,
     if not vectors:
         raise RuntimeError(f"All {len(chunks)} chunks failed to embed. Check GEMINI_API_KEY.")
 
-    # Upsert in batches of 100
     for batch_start in range(0, len(vectors), 100):
         batch = vectors[batch_start:batch_start + 100]
         index.upsert(vectors=batch, namespace=namespace)
