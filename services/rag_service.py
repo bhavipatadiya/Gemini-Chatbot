@@ -108,7 +108,7 @@ def upsert_document(doc_id: str, text: str, filename: str,
     Raises on failure — caller must handle errors.
     """
 
-    namespace = user_id if (user_id and user_id != "anonymous") else "shared"
+    namespace = "pdf-chatbot"
 
     index  = _get_index()
     chunks = chunk_text(text)
@@ -148,14 +148,15 @@ def upsert_document(doc_id: str, text: str, filename: str,
     if not vectors:
         raise RuntimeError(f"All {len(chunks)} chunks failed to embed. Check GEMINI_API_KEY.")
 
-    print("Embeddings generated:", len(vectors))
-    print("Namespace:", namespace)
+    print("Namespace Used:", namespace)
+    print("Vectors Count:", len(vectors))
 
     for batch_start in range(0, len(vectors), 100):
         batch = vectors[batch_start:batch_start + 100]
         response = index.upsert(vectors=batch, namespace=namespace)
         print(f"Pinecone response: {response}")
 
+    print(index.describe_index_stats())
     print("Uploaded vectors:", len(vectors))
     print(f"[RAG] Upserted {len(vectors)} vectors to namespace '{namespace}' (failed: {failed})")
     return {"chunks": len(vectors), "doc_id": doc_id, "namespace": namespace}
@@ -164,7 +165,7 @@ def upsert_document(doc_id: str, text: str, filename: str,
 def query_knowledge(question: str, user_id: str,
                     top_k: int = 3, min_score: float = 0.65) -> list:
     """Query Pinecone for relevant chunks."""
-    namespace = user_id if (user_id and user_id != "anonymous") else "shared"
+    namespace = "pdf-chatbot"
     try:
         index     = _get_index()
         embedding = _embed_query(question)
@@ -193,7 +194,7 @@ def query_knowledge(question: str, user_id: str,
 
 def delete_document(doc_id: str, user_id: str) -> bool:
     """Delete all chunks of a document from Pinecone."""
-    namespace = user_id if (user_id and user_id != "anonymous") else "shared"
+    namespace = "pdf-chatbot"
     try:
         index  = _get_index()
         prefix = f"{namespace}_{doc_id}_"
@@ -208,7 +209,7 @@ def delete_document(doc_id: str, user_id: str) -> bool:
 
 def list_documents(user_id: str) -> list:
     """List all unique documents stored for a user."""
-    namespace = user_id if (user_id and user_id != "anonymous") else "shared"
+    namespace = "pdf-chatbot"
     try:
         index = _get_index()
         ids   = list(index.list(namespace=namespace))
