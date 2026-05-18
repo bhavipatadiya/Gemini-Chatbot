@@ -42,7 +42,7 @@ def _embed(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list:
     Raises on failure so caller knows exactly what went wrong.
     """
     clean = re.sub(r"\s+", " ", text).strip()[:8000]
-    for attempt in range(3):
+    for attempt in range(4):   # 4 attempts for better rate-limit recovery
         try:
             resp = _requests.post(
                 _EMBED_URL,
@@ -53,10 +53,12 @@ def _embed(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list:
                     "content": {"parts": [{"text": clean}]},
                     "taskType": task_type
                 },
-                timeout=20
+                timeout=25
             )
-            if resp.status_code == 429 and attempt < 2:
-                time.sleep(3 * (attempt + 1))
+            if resp.status_code == 429:
+                wait = 5 * (attempt + 1)   # 5s, 10s, 15s, 20s
+                print(f"[RAG] Embed rate-limited, waiting {wait}s (attempt {attempt+1})")
+                time.sleep(wait)
                 continue
             if not resp.ok:
                 raise RuntimeError(f"Embedding API {resp.status_code}: {resp.text[:200]}")
@@ -67,8 +69,8 @@ def _embed(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list:
         except RuntimeError:
             raise
         except Exception as e:
-            if attempt < 2:
-                time.sleep(2)
+            if attempt < 3:
+                time.sleep(3)
                 continue
             raise RuntimeError(f"Embedding failed: {e}")
 
@@ -132,6 +134,9 @@ def upsert_document(doc_id: str, text: str, filename: str,
                     **(metadata or {})
                 }
             })
+            # Small delay every 10 chunks to avoid rate limits
+            if (i + 1) % 10 == 0:
+                time.sleep(1)
         except Exception as e:
             failed += 1
             print(f"[RAG] Chunk {i} embed failed: {e}")

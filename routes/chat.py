@@ -2,7 +2,7 @@ import json
 import os
 import re as _re
 import uuid
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, HTTPException, Request, UploadFile, File, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from models import ChatResponse
 from services.gemini_api import (
@@ -544,11 +544,11 @@ async def suggest(request: Request):
 
 
 @router.post("/upload_pdf")
-async def upload_pdf(request: Request, file: UploadFile = File(...)):
+async def upload_pdf(request: Request, background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     """
     Upload PDF for chat context.
-    - Extracts text and returns it for immediate in-chat use (existing behaviour)
-    - Synchronously indexes first 20 chunks to Pinecone (fast, ~5s)
+    - Returns immediately with extracted text (no timeout)
+    - Indexes ALL chunks to Pinecone in background (FastAPI BackgroundTasks)
     """
     global CURRENT_PDF_TEXT
     uid = _get_user_id(request)
@@ -575,35 +575,37 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
         chat_text        = full_text[:12000]
         CURRENT_PDF_TEXT = chat_text
 
-        indexed_chunks = 0
-        index_error    = None
-        print(f"[RAG] Starting index for '{file.filename}', uid='{uid}', text_len={len(full_text)}")
-        try:
-            from services.rag_service import upsert_document, pinecone_available
-            if not pinecone_available():
-                index_error = "PINECONE_API_KEY not set"
-                print(f"[RAG] Skipping — Pinecone not configured")
-            else:
-                import uuid as _uuid
-                # Index the FULL PDF text — all chunks, no limit
-                result = upsert_document(
-                    doc_id   = _uuid.uuid4().hex[:12],
-                    text     = full_text,          # full text, no truncation
-                    filename = file.filename,
-                    user_id  = uid
-                )
-                indexed_chunks = result.get("chunks", 0)
-                print(f"[RAG] ✓ Indexed '{file.filename}': {indexed_chunks} chunks → namespace='{result.get('namespace','?')}'")
-        except Exception as e:
-            index_error = str(e)
-            print(f"[RAG] ✗ Index failed for '{file.filename}': {e}")
+        # Schedule background indexing — returns immediately, no timeout risk
+        from services.rag_service import pinecone_available
+        if pinecone_available():
+            import uuid as _uuid
+            doc_id    = _uuid.uuid4().hex[:12]
+            filename  = file.filename
+
+            def _index_in_background():
+                try:
+                    from services.rag_service import upsert_document
+                    print(f"[RAG] BG: Starting index '{filename}' ({page_count}p), uid='{uid}', chars={len(full_text)}")
+                    result = upsert_document(
+                        doc_id   = doc_id,
+                        text     = full_text,
+                        filename = filename,
+                        user_id  = uid
+                    )
+                    print(f"[RAG] BG: ✓ Done '{filename}': {result['chunks']} chunks → ns='{result.get('namespace','?')}'")
+                except Exception as e:
+                    print(f"[RAG] BG: ✗ Failed '{filename}': {e}")
+
+            background_tasks.add_task(_index_in_background)
+            print(f"[RAG] Scheduled background indexing for '{filename}'")
+        else:
+            print(f"[RAG] Skipping — PINECONE_API_KEY not set")
 
         return {
-            "filename":       file.filename,
-            "content":        chat_text,
-            "pages":          page_count,
-            "indexed_chunks": indexed_chunks,
-            "index_error":    index_error
+            "filename": file.filename,
+            "content":  chat_text,
+            "pages":    page_count,
+            "indexing": "started"   # tells frontend indexing is running in background
         }
     except HTTPException: raise
     except Exception as e:
