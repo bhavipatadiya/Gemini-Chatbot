@@ -120,7 +120,12 @@ document.addEventListener("DOMContentLoaded", () => {
             await initAuth();
             return;
         }
-        await auth0Client.loginWithRedirect({ authorizationParams: { redirect_uri: AUTH0_REDIRECT } });
+        await auth0Client.loginWithRedirect({ 
+            authorizationParams: { 
+                redirect_uri: AUTH0_REDIRECT,
+                prompt: "login consent"
+            } 
+        });
     });
     document.getElementById("logout-btn").addEventListener("click", async () => {
         clearPDFStore();

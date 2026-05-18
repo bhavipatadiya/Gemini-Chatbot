@@ -119,11 +119,12 @@ def upsert_document(doc_id: str, text: str, filename: str,
 
     vectors = []
     failed  = 0
+    import uuid
     for i, chunk in enumerate(chunks):
         try:
             embedding = _embed(chunk)
             vectors.append({
-                "id":     f"{namespace}_{doc_id}_{i}",
+                "id":     f"{filename}*{i}*{uuid.uuid4().hex}",
                 "values": embedding,
                 "metadata": {
                     "doc_id":    doc_id,
@@ -147,8 +148,10 @@ def upsert_document(doc_id: str, text: str, filename: str,
 
     for batch_start in range(0, len(vectors), 100):
         batch = vectors[batch_start:batch_start + 100]
-        index.upsert(vectors=batch, namespace=namespace)
+        response = index.upsert(vectors=batch, namespace=namespace)
+        print(f"Pinecone response: {response}")
 
+    print("Uploaded vectors:", len(vectors))
     print(f"[RAG] Upserted {len(vectors)} vectors to namespace '{namespace}' (failed: {failed})")
     return {"chunks": len(vectors), "doc_id": doc_id, "namespace": namespace}
 
