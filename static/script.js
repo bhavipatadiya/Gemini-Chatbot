@@ -5,7 +5,6 @@ let auth0Client = null, isSharedView = false, sharedToken = null;
 let _currentUserId = null;
 
 async function initAuth() {
-   
     const match = window.location.pathname.match(/^\/shared\/([^\/]+)/);
     if (match) { sharedToken = match[1]; isSharedView = true; showApp(); return; }
 
@@ -18,24 +17,26 @@ async function initAuth() {
             useRefreshTokens: true
         });
 
-        
-        if (window.location.pathname === "/callback" &&
-            window.location.search.includes("code=") &&
-            window.location.search.includes("state=")) {
+        // Handle Auth0 callback — works whether redirect lands on /callback or /
+        const isCallback = (
+            window.location.pathname === "/callback" ||
+            window.location.pathname === "/"
+        ) && window.location.search.includes("code=") && window.location.search.includes("state=");
+
+        if (isCallback) {
             try {
                 await auth0Client.handleRedirectCallback();
             } catch(e) {
                 console.warn("Callback error:", e);
             }
+            // Clean URL — remove code/state params, stay on root
             window.history.replaceState({}, document.title, "/");
         }
 
         const ok = await auth0Client.isAuthenticated();
         if (ok) {
-            showApp();   
+            showApp();
         } else {
-            // Check if we have a cached user from previous session
-            // and show their name on the login screen
             try {
                 const user = await auth0Client.getUser();
                 if (user) _showLoginUserHint(user);
@@ -43,7 +44,6 @@ async function initAuth() {
             showLoginScreen();
         }
     } catch(e) {
-
         console.error("Auth0 init error:", e);
         showLoginScreen();
     }
@@ -898,9 +898,9 @@ async function _regenerateResponse(msgId) {
     }
     if (!userMsg) return;
 
-    // Remove this bot message and everything after from DOM and currentChat
-    const chatBox = document.getElementById("chat-box");
-    const wrapper = document.getElementById(msgId);
+    // Remove this bot message and everything after from DOM
+    const chatBox  = document.getElementById("chat-box");
+    const wrapper  = document.getElementById(msgId);
     const regenBtn = chatBox.querySelector(`.regen-btn[data-for="${msgId}"]`);
     if (regenBtn) regenBtn.remove();
 
@@ -915,9 +915,11 @@ async function _regenerateResponse(msgId) {
     }
 
     // Trim currentChat to just before this bot message
+    // This keeps all previous messages (user + bot) intact in history
     currentChat.splice(botIdx);
 
-    // Re-send the user message
+    // Re-send — _sendAndAppend will push the new bot message to currentChat
+    // and call saveCurrentChat() so the new response is saved
     await _sendAndAppend(userMsg.content, chatBox, false);
 }
 

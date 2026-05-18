@@ -585,9 +585,10 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
                 print(f"[RAG] Skipping — Pinecone not configured")
             else:
                 import uuid as _uuid
+                # Index the FULL PDF text — all chunks, no limit
                 result = upsert_document(
                     doc_id   = _uuid.uuid4().hex[:12],
-                    text     = full_text[:8000],
+                    text     = full_text,          # full text, no truncation
                     filename = file.filename,
                     user_id  = uid
                 )
@@ -598,11 +599,11 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
             print(f"[RAG] ✗ Index failed for '{file.filename}': {e}")
 
         return {
-            "filename":      file.filename,
-            "content":       chat_text,
-            "pages":         page_count,
+            "filename":       file.filename,
+            "content":        chat_text,
+            "pages":          page_count,
             "indexed_chunks": indexed_chunks,
-            "index_error":   index_error
+            "index_error":    index_error
         }
     except HTTPException: raise
     except Exception as e:
