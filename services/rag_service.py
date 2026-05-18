@@ -32,6 +32,7 @@ def _get_index():
         else:
             _pc_index = pc.Index(PINECONE_INDEX_NAME)
         print(f"[RAG] Pinecone connected: {PINECONE_INDEX_NAME}")
+        print(_pc_index.describe_index_stats())
         return _pc_index
     except ImportError:
         raise RuntimeError("pinecone not installed. Run: pip install pinecone")
@@ -111,6 +112,7 @@ def upsert_document(doc_id: str, text: str, filename: str,
 
     index  = _get_index()
     chunks = chunk_text(text)
+    print("Total chunks:", len(chunks))
     if not chunks:
         print(f"[RAG] No chunks from '{filename}'")
         return {"chunks": 0, "doc_id": doc_id}
@@ -145,6 +147,9 @@ def upsert_document(doc_id: str, text: str, filename: str,
 
     if not vectors:
         raise RuntimeError(f"All {len(chunks)} chunks failed to embed. Check GEMINI_API_KEY.")
+
+    print("Embeddings generated:", len(vectors))
+    print("Namespace:", namespace)
 
     for batch_start in range(0, len(vectors), 100):
         batch = vectors[batch_start:batch_start + 100]

@@ -569,6 +569,7 @@ async def upload_pdf(request: Request, background_tasks: BackgroundTasks, file: 
         full_text  = "".join(f"\n--- Page {n+1} ---\n{doc[n].get_text()}" for n in range(page_count))
         doc.close()
         full_text = full_text.strip()
+        print("PDF text length:", len(full_text))
         if not full_text:
             raise HTTPException(status_code=400, detail="PDF has no readable text.")
 
