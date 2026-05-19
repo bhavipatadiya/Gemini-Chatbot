@@ -159,7 +159,7 @@ def upsert_document(doc_id: str, text: str, filename: str,
                     "filename":  filename,
                     "user_id":   namespace,
                     "chunk_idx": i,
-                    "text":      chunk[:1000],
+                    "text":      chunk,
                     **(metadata or {})
                 }
             })
