@@ -13,8 +13,11 @@ API_KEY = os.getenv("GEMINI_API_KEY", "")
 if not API_KEY:
     raise RuntimeError("GEMINI_API_KEY environment variable is not set.")
 
+# Models confirmed available on this API key (checked via list_models)
 _MODELS = [
-    "gemini-1.5-flash",
+    "gemini-2.0-flash-lite",   # fastest, primary
+    "gemini-2.0-flash",        # fallback 1
+    "gemini-2.5-flash",        # fallback 2
 ]
 _API_BASE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
