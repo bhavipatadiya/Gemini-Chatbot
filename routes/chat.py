@@ -62,7 +62,7 @@ def _get_rag_context(message: str, user_id: str) -> str:
         from services.rag_service import query_knowledge, build_rag_context, pinecone_available
         if not pinecone_available():
             return ""
-        matches = query_knowledge(message, user_id, top_k=3, min_score=0.70)
+        matches = query_knowledge(message, user_id, top_k=10, min_score=0.55)
         return build_rag_context(matches) if matches else ""
     except Exception as e:
         print(f"[RAG] Context retrieval failed: {e}")
