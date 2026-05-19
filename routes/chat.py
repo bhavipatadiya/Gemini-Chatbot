@@ -493,7 +493,6 @@ async def suggest(request: Request):
                         return {"suggestions": result[:3]}
                 except Exception: pass
 
-            # Fallback to random defaults for new users
             random.shuffle(_DEFAULTS)
             return {"suggestions": _DEFAULTS[:3]}
 
@@ -576,7 +575,6 @@ async def upload_pdf(request: Request, background_tasks: BackgroundTasks, file: 
         chat_text        = full_text[:12000]
         CURRENT_PDF_TEXT = chat_text
 
-        # Schedule background indexing — returns immediately, no timeout risk
         from services.rag_service import pinecone_available
         if pinecone_available():
             import uuid as _uuid
@@ -606,7 +604,7 @@ async def upload_pdf(request: Request, background_tasks: BackgroundTasks, file: 
             "filename": file.filename,
             "content":  chat_text,
             "pages":    page_count,
-            "indexing": "started"   # tells frontend indexing is running in background
+            "indexing": "started"  
         }
     except HTTPException: raise
     except Exception as e:

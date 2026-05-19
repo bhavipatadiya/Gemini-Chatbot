@@ -17,7 +17,6 @@ async function initAuth() {
             useRefreshTokens: true
         });
 
-        // Handle Auth0 callback — works whether redirect lands on /callback or /
         const isCallback = (
             window.location.pathname === "/callback" ||
             window.location.pathname === "/"
@@ -29,7 +28,7 @@ async function initAuth() {
             } catch(e) {
                 console.warn("Callback error:", e);
             }
-            // Clean URL — remove code/state params, stay on root
+          
             window.history.replaceState({}, document.title, "/");
         }
 
@@ -67,20 +66,19 @@ async function _apiFetch(url, options = {}, retries = 2) {
     return _fetchWithRetry(url, options, retries);
 }
 
-// Retries on network errors (e.g. Render cold start / service waking up)
 async function _fetchWithRetry(url, options, retries) {
     for (let attempt = 0; attempt <= retries; attempt++) {
         try {
             const res = await fetch(url, options);
             return res;
         } catch(e) {
-            // TypeError: Failed to fetch = network error (server down / waking up)
+           
             if (attempt < retries) {
-                // Wait 3s then retry — gives Render time to wake up
+              
                 await new Promise(r => setTimeout(r, 3000));
                 continue;
             }
-            // All retries exhausted — throw a clear message
+          
             throw new Error("Cannot reach server. It may be starting up — please try again in a moment.");
         }
     }
@@ -97,7 +95,7 @@ function showApp() {
 }
 
 function _showLoginUserHint(user) {
-    // Show returning user's name/avatar on the login card
+    
     const card = document.querySelector(".auth-card");
     if (!card || !user) return;
     const existing = card.querySelector(".auth-user-hint");
@@ -108,7 +106,7 @@ function _showLoginUserHint(user) {
         ? `<img src="${user.picture}" alt="" class="auth-user-pic" onerror="this.style.display='none'">`
         : "";
     hint.innerHTML = `${pic}<span>Welcome back, <strong>${user.name || user.email || "User"}</strong></span>`;
-    // Insert before the login button
+ 
     const btn = card.querySelector("#login-btn");
     if (btn) card.insertBefore(hint, btn);
 }
@@ -875,14 +873,12 @@ function renderBotMessage(msg, container) {
     _appendMsgToolbar(wrapper, msg.msgId);
 }
 
-// ── Per-message response history (for < 1/2 > navigation) ────
-const _msgHistory = {};  // msgId → { versions: [html,...], current: 0 }
-
+const _msgHistory = {};  
 function _appendMsgToolbar(wrapper, msgId) {
     const existing = wrapper.parentNode && wrapper.parentNode.querySelector(`.msg-toolbar[data-for="${msgId}"]`);
     if (existing) existing.remove();
 
-    // Init history entry if not exists
+
     if (!_msgHistory[msgId]) {
         _msgHistory[msgId] = { versions: [wrapper.innerHTML.replace(/<div class="msg-viz-section[\s\S]*/, "").trim()], current: 0 };
     }
@@ -895,7 +891,6 @@ function _appendMsgToolbar(wrapper, msgId) {
     toolbar.className = "msg-toolbar";
     toolbar.dataset.for = msgId;
 
-    // Navigation (only show if more than 1 version)
     const navHtml = total > 1
         ? `<button class="tb-btn tb-prev" title="Previous response" onclick="_navResponse('${msgId}',-1)">
                <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
@@ -939,7 +934,7 @@ function _copyMsg(msgId) {
         ta.value = text; document.body.appendChild(ta); ta.select();
         document.execCommand("copy"); document.body.removeChild(ta);
     });
-    // Brief visual feedback
+   
     const btn = document.querySelector(`.msg-toolbar[data-for="${msgId}"] .tb-copy`);
     if (btn) { btn.style.color = "#19c37d"; setTimeout(() => btn.style.color = "", 1000); }
 }
@@ -958,10 +953,9 @@ async function _regenerateResponse(msgId) {
     const wrapper  = document.getElementById(msgId);
     const toolbar  = chatBox.querySelector(`.msg-toolbar[data-for="${msgId}"]`);
 
-    // Remove toolbar temporarily
+
     if (toolbar) toolbar.remove();
 
-    // Show loading inside the existing wrapper
     wrapper.innerHTML = `<span></span><span></span><span></span>`;
     wrapper.classList.add("loading");
     scrollToBottom();
@@ -987,12 +981,12 @@ async function _regenerateResponse(msgId) {
         wrapper.innerHTML = "";
 
         typewriterAnimate(wrapper, replyHtml, () => {
-            // Store new version in history
+            
             if (!_msgHistory[msgId]) _msgHistory[msgId] = { versions: [], current: 0 };
             _msgHistory[msgId].versions.push(replyHtml);
             _msgHistory[msgId].current = _msgHistory[msgId].versions.length - 1;
 
-            // Update currentChat with new response
+            
             currentChat[botIdx] = { ...currentChat[botIdx], content: replyHtml };
 
             wrapTables(wrapper); scrollToBottom();
@@ -1030,7 +1024,7 @@ async function _sendAndAppend(msg, chatBox, isEdit = false) {
         chatBox.appendChild(wrapper);
         typewriterAnimate(wrapper, replyHtml, () => {
             currentChat.push(botMsg); wrapTables(wrapper); scrollToBottom();
-            // Init version history for this message
+           
             _msgHistory[botMsg.msgId] = { versions: [replyHtml], current: 0 };
             _appendMsgToolbar(wrapper, botMsg.msgId);
             if (isSharedView) return;
@@ -1049,7 +1043,6 @@ async function _sendAndAppend(msg, chatBox, isEdit = false) {
         chatBox.appendChild(ed); scrollToBottom();
     }
 }
-
 
 async function requestVisualization(viewType, chartType) {
     closeAllDropdowns();
@@ -1422,7 +1415,7 @@ async function sendMessage() {
         chatBox.appendChild(wrapper);
         typewriterAnimate(wrapper,replyHtml,()=>{
             currentChat.push(botMsg); wrapTables(wrapper); scrollToBottom();
-            // Init version history for this message
+          
             _msgHistory[botMsg.msgId] = { versions: [replyHtml], current: 0 };
             _appendMsgToolbar(wrapper, botMsg.msgId);
             if (isSharedView) return;

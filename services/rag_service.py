@@ -43,7 +43,7 @@ def _embed(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list:
     Raises on failure so caller knows exactly what went wrong.
     """
     clean = re.sub(r"\s+", " ", text).strip()[:8000]
-    for attempt in range(4):   # 4 attempts for better rate-limit recovery
+    for attempt in range(4):   
         try:
             resp = _requests.post(
                 _EMBED_URL,
@@ -57,7 +57,7 @@ def _embed(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list:
                 timeout=25
             )
             if resp.status_code == 429:
-                wait = 5 * (attempt + 1)   # 5s, 10s, 15s, 20s
+                wait = 5 * (attempt + 1)   
                 print(f"[RAG] Embed rate-limited, waiting {wait}s (attempt {attempt+1})")
                 time.sleep(wait)
                 continue
@@ -74,8 +74,7 @@ def _embed(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list:
                 time.sleep(3)
                 continue
             raise RuntimeError(f"Embedding failed: {e}")
-
-
+        
 def _embed_query(text: str) -> list:
     return _embed(text, task_type="RETRIEVAL_QUERY")
 
@@ -107,12 +106,13 @@ def upsert_document(doc_id: str, text: str, filename: str,
     Uses user_id as namespace for per-user isolation.
     Raises on failure — caller must handle errors.
     """
-
     namespace = "pdf-chatbot"
+
+    print(f"[RAG] PDF uploaded: {filename}")
 
     index  = _get_index()
     chunks = chunk_text(text)
-    print("Total chunks:", len(chunks))
+    print("Total chunks created:", len(chunks))
     if not chunks:
         print(f"[RAG] No chunks from '{filename}'")
         return {"chunks": 0, "doc_id": doc_id}
@@ -122,11 +122,16 @@ def upsert_document(doc_id: str, text: str, filename: str,
     vectors = []
     failed  = 0
     import uuid
+    import time
+    
+    timestamp = int(time.time())
+    
     for i, chunk in enumerate(chunks):
         try:
             embedding = _embed(chunk)
+            unique_id = f"{namespace}_{doc_id}_{i}_{timestamp}_{uuid.uuid4().hex}"
             vectors.append({
-                "id":     f"{filename}*{i}*{uuid.uuid4().hex}",
+                "id": unique_id,
                 "values": embedding,
                 "metadata": {
                     "doc_id":    doc_id,
@@ -137,7 +142,7 @@ def upsert_document(doc_id: str, text: str, filename: str,
                     **(metadata or {})
                 }
             })
-            # Small delay every 10 chunks to avoid rate limits
+            
             if (i + 1) % 10 == 0:
                 time.sleep(1)
         except Exception as e:
@@ -148,16 +153,28 @@ def upsert_document(doc_id: str, text: str, filename: str,
     if not vectors:
         raise RuntimeError(f"All {len(chunks)} chunks failed to embed. Check GEMINI_API_KEY.")
 
-    print("Namespace Used:", namespace)
-    print("Vectors Count:", len(vectors))
+    print("Namespace used:", namespace)
+    print("Vectors inserted:", len(vectors))
 
     for batch_start in range(0, len(vectors), 100):
         batch = vectors[batch_start:batch_start + 100]
         response = index.upsert(vectors=batch, namespace=namespace)
         print(f"Pinecone response: {response}")
 
-    print(index.describe_index_stats())
-    print("Uploaded vectors:", len(vectors))
+    stats = index.describe_index_stats()
+    print(stats)
+    
+    try:
+        if hasattr(stats, 'namespaces') and namespace in stats.namespaces:
+            total_records = stats.namespaces[namespace].vector_count
+        elif isinstance(stats, dict) and 'namespaces' in stats and namespace in stats['namespaces']:
+            total_records = stats['namespaces'][namespace].get('vector_count', 0)
+        else:
+            total_records = 0
+        print(f"Total records after upload: {total_records}")
+    except Exception as e:
+        print(f"Could not fetch total records: {e}")
+
     print(f"[RAG] Upserted {len(vectors)} vectors to namespace '{namespace}' (failed: {failed})")
     return {"chunks": len(vectors), "doc_id": doc_id, "namespace": namespace}
 

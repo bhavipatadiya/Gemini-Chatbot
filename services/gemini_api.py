@@ -241,7 +241,6 @@ Rules:
             "xLabel":  "Item", "yLabel": "Value", "source": "fallback"
         }
 
-
 def extract_chart_data(chat_text: str) -> dict:
     try:
         prompt = f"""You are a data extraction assistant.
