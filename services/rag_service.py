@@ -135,7 +135,7 @@ def upsert_document(doc_id: str, text: str, filename: str,
         existing_count = "unknown"
 
     chunks = chunk_text(text)
-    print(f"[RAG DEBUG] Chunks created: {len(chunks)}")
+    print(f"[RAG DEBUG] Total chunks created: {len(chunks)}")
     if not chunks:
         print(f"[RAG DEBUG] Aborting: No chunks generated for '{filename}'")
         return {"chunks": 0, "doc_id": doc_id, "namespace": namespace}
@@ -146,7 +146,6 @@ def upsert_document(doc_id: str, text: str, filename: str,
     
     timestamp = int(time.time())
     
-    print(f"[RAG DEBUG] Generating embeddings...")
     for i, chunk in enumerate(chunks):
         try:
             embedding = _embed(chunk)
@@ -160,17 +159,17 @@ def upsert_document(doc_id: str, text: str, filename: str,
                     "user_id":   namespace,
                     "chunk_idx": i,
                     "text":      chunk,
+                    "timestamp": timestamp,
                     **(metadata or {})
                 }
             })
-            if i == 0:
-                print(f"[RAG DEBUG] First chunk ID: {unique_id}")
             if (i + 1) % 10 == 0:
                 time.sleep(1)
         except Exception as e:
             print(f"[RAG DEBUG] Exception generating embedding for chunk {i}: {e}")
 
     print(f"[RAG DEBUG] Embeddings generated: {len(vectors)}")
+    print(f"[RAG DEBUG] Total vectors prepared: {len(vectors)}")
     if not vectors:
         print(f"[RAG DEBUG] Aborting: All {len(chunks)} chunks failed to embed. Check GEMINI_API_KEY.")
         raise RuntimeError("Embedding failure")
@@ -178,7 +177,8 @@ def upsert_document(doc_id: str, text: str, filename: str,
     if len(vectors) > 0:
         print(f"[RAG DEBUG] First 5 vector IDs: {[v['id'] for v in vectors[:5]]}")
 
-    print(f"[RAG DEBUG] Upserting vectors...")
+    print(f"[RAG DEBUG] Namespace used: {namespace}")
+    print(f"[RAG DEBUG] Upsert batch size: 100")
     try:
         for batch_start in range(0, len(vectors), 100):
             batch = vectors[batch_start:batch_start + 100]
@@ -221,6 +221,7 @@ def query_knowledge(question: str, user_id: str,
                     top_k: int = 3, min_score: float = 0.65) -> list:
     """Query Pinecone for relevant chunks."""
     namespace = user_id
+    print(f"[RAG DEBUG] Query namespace: {namespace}")
     try:
         index     = _get_index()
         embedding = _embed_query(question)
@@ -229,21 +230,27 @@ def query_knowledge(question: str, user_id: str,
             namespace=namespace, include_metadata=True
         )
         matches = []
+        retrieved_filenames = []
         for match in results.get("matches", []):
             score = match.get("score", 0)
             if score >= min_score:
                 meta = match.get("metadata", {})
+                filename = meta.get("filename", "Unknown")
                 matches.append({
                     "text":      meta.get("text", ""),
                     "score":     round(score, 3),
-                    "filename":  meta.get("filename", "Unknown"),
+                    "filename":  filename,
                     "doc_id":    meta.get("doc_id", ""),
                     "chunk_idx": meta.get("chunk_idx", 0)
                 })
+                retrieved_filenames.append(f"{filename} (score: {round(score, 3)})")
+        
+        print(f"[RAG DEBUG] Retrieved filenames: {', '.join(retrieved_filenames)}")
+        print(f"[RAG DEBUG] Total matches returned: {len(matches)}")
         print(f"[RAG] Query returned {len(matches)} matches (namespace: {namespace})")
         return matches
     except Exception as e:
-        print(f"[RAG] Query error: {e}")
+        print(f"[RAG DEBUG] Query error: {e}")
         return []
 
 
