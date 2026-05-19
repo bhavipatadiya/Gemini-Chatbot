@@ -106,26 +106,47 @@ def upsert_document(doc_id: str, text: str, filename: str,
     Uses user_id as namespace for per-user isolation.
     Raises on failure — caller must handle errors.
     """
-    namespace = "pdf-chatbot"
+    print("\n[RAG DEBUG] Starting upload...")
+    namespace = user_id
+    print(f"[RAG DEBUG] Namespace: {namespace}")
+    print(f"[RAG DEBUG] Filename: {filename}")
 
-    print(f"[RAG] PDF uploaded: {filename}")
+    try:
+        index = _get_index()
+    except Exception as e:
+        print(f"[RAG DEBUG] Failed to get index: {e}")
+        raise
 
-    index  = _get_index()
+    try:
+        stats = index.describe_index_stats()
+        namespaces = stats.get('namespaces', {}) if isinstance(stats, dict) else getattr(stats, 'namespaces', {})
+        if hasattr(namespaces, 'get') and namespace in namespaces:
+            ns_stats = namespaces.get(namespace)
+        else:
+            ns_stats = getattr(namespaces, namespace, None) if hasattr(namespaces, namespace) else (namespaces[namespace] if namespace in namespaces else None)
+        
+        if ns_stats:
+            existing_count = getattr(ns_stats, 'vector_count', ns_stats.get('vector_count', 0) if isinstance(ns_stats, dict) else 0)
+        else:
+            existing_count = 0
+        print(f"[RAG DEBUG] Existing vector count: {existing_count}")
+    except Exception as e:
+        print(f"[RAG DEBUG] Error fetching existing stats: {e}")
+        existing_count = "unknown"
+
     chunks = chunk_text(text)
-    print("Total chunks created:", len(chunks))
+    print(f"[RAG DEBUG] Chunks created: {len(chunks)}")
     if not chunks:
-        print(f"[RAG] No chunks from '{filename}'")
-        return {"chunks": 0, "doc_id": doc_id}
-
-    print(f"[RAG] Embedding {len(chunks)} chunks for '{filename}' (user: {namespace[:12]})")
+        print(f"[RAG DEBUG] Aborting: No chunks generated for '{filename}'")
+        return {"chunks": 0, "doc_id": doc_id, "namespace": namespace}
 
     vectors = []
-    failed  = 0
     import uuid
     import time
     
     timestamp = int(time.time())
     
+    print(f"[RAG DEBUG] Generating embeddings...")
     for i, chunk in enumerate(chunks):
         try:
             embedding = _embed(chunk)
@@ -142,47 +163,64 @@ def upsert_document(doc_id: str, text: str, filename: str,
                     **(metadata or {})
                 }
             })
-            
+            if i == 0:
+                print(f"[RAG DEBUG] First chunk ID: {unique_id}")
             if (i + 1) % 10 == 0:
                 time.sleep(1)
         except Exception as e:
-            failed += 1
-            print(f"[RAG] Chunk {i} embed failed: {e}")
-            continue
+            print(f"[RAG DEBUG] Exception generating embedding for chunk {i}: {e}")
 
+    print(f"[RAG DEBUG] Embeddings generated: {len(vectors)}")
     if not vectors:
-        raise RuntimeError(f"All {len(chunks)} chunks failed to embed. Check GEMINI_API_KEY.")
+        print(f"[RAG DEBUG] Aborting: All {len(chunks)} chunks failed to embed. Check GEMINI_API_KEY.")
+        raise RuntimeError("Embedding failure")
 
-    print("Namespace used:", namespace)
-    print("Vectors inserted:", len(vectors))
+    if len(vectors) > 0:
+        print(f"[RAG DEBUG] First 5 vector IDs: {[v['id'] for v in vectors[:5]]}")
 
-    for batch_start in range(0, len(vectors), 100):
-        batch = vectors[batch_start:batch_start + 100]
-        response = index.upsert(vectors=batch, namespace=namespace)
-        print(f"Pinecone response: {response}")
+    print(f"[RAG DEBUG] Upserting vectors...")
+    try:
+        for batch_start in range(0, len(vectors), 100):
+            batch = vectors[batch_start:batch_start + 100]
+            response = index.upsert(vectors=batch, namespace=namespace)
+            print(f"[RAG DEBUG] Batch upsert response: {response}")
+    except Exception as e:
+        import traceback
+        print(f"[RAG DEBUG] Upsert exception: {e}")
+        traceback.print_exc()
+        raise
 
-    stats = index.describe_index_stats()
-    print(stats)
+    print(f"[RAG DEBUG] Upsert response: success")
+    
+    # Delay to allow Pinecone indexing to refresh
+    time.sleep(2)
     
     try:
-        if hasattr(stats, 'namespaces') and namespace in stats.namespaces:
-            total_records = stats.namespaces[namespace].vector_count
-        elif isinstance(stats, dict) and 'namespaces' in stats and namespace in stats['namespaces']:
-            total_records = stats['namespaces'][namespace].get('vector_count', 0)
+        stats_after = index.describe_index_stats()
+        namespaces_after = stats_after.get('namespaces', {}) if isinstance(stats_after, dict) else getattr(stats_after, 'namespaces', {})
+        
+        if hasattr(namespaces_after, 'get') and namespace in namespaces_after:
+            ns_stats_after = namespaces_after.get(namespace)
         else:
-            total_records = 0
-        print(f"Total records after upload: {total_records}")
+            ns_stats_after = getattr(namespaces_after, namespace, None) if hasattr(namespaces_after, namespace) else (namespaces_after[namespace] if namespace in namespaces_after else None)
+            
+        if ns_stats_after:
+            updated_count = getattr(ns_stats_after, 'vector_count', ns_stats_after.get('vector_count', 0) if isinstance(ns_stats_after, dict) else 0)
+        else:
+            updated_count = 0
+            
+        print(f"[RAG DEBUG] Updated vector count: {updated_count}")
+        print(f"[RAG DEBUG] Final vector count: {updated_count}")
     except Exception as e:
-        print(f"Could not fetch total records: {e}")
+        print(f"[RAG DEBUG] Error fetching updated stats: {e}")
 
-    print(f"[RAG] Upserted {len(vectors)} vectors to namespace '{namespace}' (failed: {failed})")
     return {"chunks": len(vectors), "doc_id": doc_id, "namespace": namespace}
 
 
 def query_knowledge(question: str, user_id: str,
                     top_k: int = 3, min_score: float = 0.65) -> list:
     """Query Pinecone for relevant chunks."""
-    namespace = "pdf-chatbot"
+    namespace = user_id
     try:
         index     = _get_index()
         embedding = _embed_query(question)
@@ -211,7 +249,7 @@ def query_knowledge(question: str, user_id: str,
 
 def delete_document(doc_id: str, user_id: str) -> bool:
     """Delete all chunks of a document from Pinecone."""
-    namespace = "pdf-chatbot"
+    namespace = user_id
     try:
         index  = _get_index()
         prefix = f"{namespace}_{doc_id}_"
@@ -226,7 +264,7 @@ def delete_document(doc_id: str, user_id: str) -> bool:
 
 def list_documents(user_id: str) -> list:
     """List all unique documents stored for a user."""
-    namespace = "pdf-chatbot"
+    namespace = user_id
     try:
         index = _get_index()
         ids   = list(index.list(namespace=namespace))
