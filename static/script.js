@@ -163,7 +163,6 @@ const chartRegistry = {};
 let chats = [], currentChat = [], currentTitle = null, currentChatId = null;
 let currentChatPDFs = [], pendingPDFs = [], currentTopic = null;
 
-
 const _S = {
     debounce:   null,
     abort:      null,
@@ -533,7 +532,6 @@ function initApp() {
         document.body.classList.add("light-mode");
         document.getElementById("theme-btn").textContent = "☀️";
     }
-
 
     if (!_appInitDone) {
         _appInitDone = true;
@@ -1072,7 +1070,6 @@ async function requestVisualization(viewType, chartType) {
 
         renderVizSection(vizSection, viewType, chartType, extracted);
         wrapTables(vizSection);
-
         
         if (extracted.explanation) {
             lastBot.viz_explanation = extracted.explanation;
