@@ -68,7 +68,7 @@ You MUST follow these rules without exception:
 
         rag_block = ""
         if rag_context and rag_context.strip():
-            rag_block = rag_context + "\n"
+            rag_block = "## Knowledge Base Context (IMPORTANT: If you use this information, explicitly cite the source filename in your answer):\n" + rag_context + "\n"
 
         prompt = f"""You are a helpful and intelligent AI assistant with memory of the conversation.
 

@@ -91,12 +91,11 @@ def process_chat_request(data: dict, user_id: str = "anonymous"):
             rag_context = _get_rag_context(message, user_id)
 
         if active_pdf:
-    
             pdf_section = f"PDF Content:\n{active_pdf[:4000]}"
             rag_section = f"\n\n{rag_context}" if rag_context else ""
             final_prompt = (
-                "You are a helpful assistant. Answer the question using the PDF content below.\n"
-                "Be concise and accurate. If the answer is not in the content, say so.\n\n"
+                "You are a helpful assistant. Answer the question using the PDF content and Knowledge Base context below.\n"
+                "Be concise and accurate. If you use information from the Knowledge Base, explicitly mention the source filename in your answer.\n\n"
                 f"{pdf_section}{rag_section}\n\nQuestion: {message}\n\nAnswer:"
             )
             reply = call_gemini_api(final_prompt, [], None, "")
