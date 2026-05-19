@@ -15,7 +15,6 @@ if not API_KEY:
 
 _MODELS = [
     "gemini-1.5-flash",
-    "gemini-1.5-pro"   
 ]
 _API_BASE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
