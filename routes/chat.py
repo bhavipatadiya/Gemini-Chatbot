@@ -94,10 +94,17 @@ def process_chat_request(data: dict, user_id: str = "anonymous"):
             pdf_section = f"PDF Content:\n{active_pdf[:4000]}"
             rag_section = f"\n\n{rag_context}" if rag_context else ""
             final_prompt = (
-                "You are a helpful assistant. Answer the question using the PDF content and Knowledge Base context below.\n"
-                "Be concise and accurate. If you use information from the Knowledge Base, explicitly mention the source filename in your answer.\n\n"
+                "You are a helpful and intelligent AI assistant. Your task is to provide highly detailed, comprehensive explanations based on the PDF content and Knowledge Base context below.\n"
+                "STRICT RULES FOR YOUR ANSWER:\n"
+                "1. Always generate LONG and DETAILED answers (minimum 5-10 paragraphs if the topic allows).\n"
+                "2. Combine and intelligently merge information from ALL relevant PDFs provided in the context.\n"
+                "3. Use headings and bullet points to organize your explanation step-by-step.\n"
+                "4. Do NOT summarize in 2-3 lines. Give a full, deep explanation.\n"
+                "5. If you use information from the Knowledge Base or PDFs, you MUST explicitly mention the source filename (e.g., 'According to Resume.pdf...').\n"
+                "6. Use the retrieved chunks fully before answering.\n\n"
                 f"{pdf_section}{rag_section}\n\nQuestion: {message}\n\nAnswer:"
             )
+            print(f"[RAG DEBUG] Total context length sent to Gemini: {len(final_prompt)} chars")
             reply = call_gemini_api(final_prompt, [], None, "")
         else:
             reply = call_gemini_api(
@@ -110,6 +117,7 @@ def process_chat_request(data: dict, user_id: str = "anonymous"):
     if use_rag and user_id != "anonymous":
         rag_context = _get_rag_context(message, user_id)
 
+    print(f"[RAG DEBUG] Total context length sent to Gemini: {len(rag_context) + len(message)} chars")
     reply = call_gemini_api(message, conversation_history, topic_lock, rag_context)
     return ChatResponse(reply=reply)
 

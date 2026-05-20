@@ -13,14 +13,13 @@ API_KEY = os.getenv("GEMINI_API_KEY", "")
 if not API_KEY:
     raise RuntimeError("GEMINI_API_KEY environment variable is not set.")
 
-# Models confirmed working on this API key (tested live)
 _MODELS = [
-    "gemini-2.5-flash",            # primary — confirmed working
-    "gemini-flash-lite-latest",    # fallback 1
-    "gemini-flash-latest",         # fallback 2
-    "gemini-3.1-flash-lite",       # fallback 3
-    "gemini-2.0-flash-lite",       # fallback 4 (may hit quota)
-    "gemini-2.0-flash",            # fallback 5 (may hit quota)
+    "gemini-2.5-flash",          
+    "gemini-flash-lite-latest",   
+    "gemini-flash-latest",         
+    "gemini-3.1-flash-lite",      
+    "gemini-2.0-flash-lite",      
+    "gemini-2.0-flash",            
 ]
 _API_BASE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
@@ -68,7 +67,7 @@ You MUST follow these rules without exception:
 
         rag_block = ""
         if rag_context and rag_context.strip():
-            rag_block = "## Knowledge Base Context (IMPORTANT: If you use this information, explicitly cite the source filename in your answer):\n" + rag_context + "\n"
+            rag_block = rag_context + "\n"
 
         prompt = f"""You are a helpful and intelligent AI assistant with memory of the conversation.
 
@@ -383,7 +382,6 @@ def _call_with_retry(prompt: str, as_html: bool = True) -> str:
                     },
                     timeout=30   
                 )
-
                 if resp.status_code == 429:
                     if attempt < max_tries - 1:
                         time.sleep(base_delay * (2 ** attempt))

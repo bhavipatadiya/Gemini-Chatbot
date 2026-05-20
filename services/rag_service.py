@@ -78,10 +78,10 @@ def _embed(text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> list:
 def _embed_query(text: str) -> list:
     return _embed(text, task_type="RETRIEVAL_QUERY")
 
-def chunk_text(text: str, chunk_size: int = 275, overlap: int = 30) -> list:
+def chunk_text(text: str, chunk_size: int = 200, overlap: int = 50) -> list:
     """
-    Split text into chunks of 250-300 words with overlap.
-    chunk_size: words per chunk (275 = midpoint of 250-300 range)
+    Split text into chunks of 200 words with 50 word overlap.
+    chunk_size: words per chunk
     overlap: shared words between adjacent chunks for context continuity
     """
     text  = re.sub(r"\s+", " ", text).strip()
@@ -107,7 +107,7 @@ def upsert_document(doc_id: str, text: str, filename: str,
     Raises on failure — caller must handle errors.
     """
     print("\n[RAG DEBUG] Starting upload...")
-    namespace = user_id
+    namespace = "default"
     print(f"[RAG DEBUG] Namespace: {namespace}")
     print(f"[RAG DEBUG] Filename: {filename}")
 
@@ -135,7 +135,7 @@ def upsert_document(doc_id: str, text: str, filename: str,
         existing_count = "unknown"
 
     chunks = chunk_text(text)
-    print(f"[RAG DEBUG] Total chunks created: {len(chunks)}")
+    print(f"[RAG DEBUG] Chunks created: {len(chunks)}")
     if not chunks:
         print(f"[RAG DEBUG] Aborting: No chunks generated for '{filename}'")
         return {"chunks": 0, "doc_id": doc_id, "namespace": namespace}
@@ -146,6 +146,7 @@ def upsert_document(doc_id: str, text: str, filename: str,
     
     timestamp = int(time.time())
     
+    print(f"[RAG DEBUG] Generating embeddings...")
     for i, chunk in enumerate(chunks):
         try:
             embedding = _embed(chunk)
@@ -159,26 +160,28 @@ def upsert_document(doc_id: str, text: str, filename: str,
                     "user_id":   namespace,
                     "chunk_idx": i,
                     "text":      chunk,
-                    "timestamp": timestamp,
+                    "upload_time": timestamp,
                     **(metadata or {})
                 }
             })
+            if i == 0:
+                print(f"[RAG DEBUG] First chunk ID: {unique_id}")
             if (i + 1) % 10 == 0:
                 time.sleep(1)
         except Exception as e:
             print(f"[RAG DEBUG] Exception generating embedding for chunk {i}: {e}")
 
     print(f"[RAG DEBUG] Embeddings generated: {len(vectors)}")
-    print(f"[RAG DEBUG] Total vectors prepared: {len(vectors)}")
     if not vectors:
         print(f"[RAG DEBUG] Aborting: All {len(chunks)} chunks failed to embed. Check GEMINI_API_KEY.")
         raise RuntimeError("Embedding failure")
 
     if len(vectors) > 0:
-        print(f"[RAG DEBUG] First 5 vector IDs: {[v['id'] for v in vectors[:5]]}")
+        print(f"[RAG DEBUG] Recent PDF uploaded: {filename}")
+        print(f"[RAG DEBUG] Total chunks inserted: {len(vectors)}")
+        print(f"[RAG DEBUG] Sample chunk text: {vectors[0]['metadata']['text'][:150]}...")
 
-    print(f"[RAG DEBUG] Namespace used: {namespace}")
-    print(f"[RAG DEBUG] Upsert batch size: 100")
+    print(f"[RAG DEBUG] Upserting vectors...")
     try:
         for batch_start in range(0, len(vectors), 100):
             batch = vectors[batch_start:batch_start + 100]
@@ -192,7 +195,7 @@ def upsert_document(doc_id: str, text: str, filename: str,
 
     print(f"[RAG DEBUG] Upsert response: success")
     
-    # Delay to allow Pinecone indexing to refresh
+
     time.sleep(2)
     
     try:
@@ -218,45 +221,66 @@ def upsert_document(doc_id: str, text: str, filename: str,
 
 
 def query_knowledge(question: str, user_id: str,
-                    top_k: int = 3, min_score: float = 0.65) -> list:
+                    top_k: int = 10, min_score: float = 0.65) -> list:
     """Query Pinecone for relevant chunks."""
-    namespace = user_id
-    print(f"[RAG DEBUG] Query namespace: {namespace}")
+    namespace = "default"
     try:
         index     = _get_index()
         embedding = _embed_query(question)
+        # Fetch extra results to allow re-ranking by recency
+        fetch_k = max(20, top_k * 2)
         results   = index.query(
-            vector=embedding, top_k=top_k,
+            vector=embedding, top_k=fetch_k,
             namespace=namespace, include_metadata=True
         )
-        matches = []
-        retrieved_filenames = []
-        for match in results.get("matches", []):
-            score = match.get("score", 0)
-            if score >= min_score:
-                meta = match.get("metadata", {})
-                filename = meta.get("filename", "Unknown")
-                matches.append({
-                    "text":      meta.get("text", ""),
-                    "score":     round(score, 3),
-                    "filename":  filename,
-                    "doc_id":    meta.get("doc_id", ""),
-                    "chunk_idx": meta.get("chunk_idx", 0)
-                })
-                retrieved_filenames.append(f"{filename} (score: {round(score, 3)})")
         
-        print(f"[RAG DEBUG] Retrieved filenames: {', '.join(retrieved_filenames)}")
-        print(f"[RAG DEBUG] Total matches returned: {len(matches)}")
+        current_time = time.time()
+        matches = []
+        for match in results.get("matches", []):
+            similarity_score = match.get("score", 0)
+            if similarity_score >= min_score:
+                meta = match.get("metadata", {})
+                
+                # Calculate recency score
+                upload_time = meta.get("upload_time", 0)
+                if upload_time > 0:
+                    age_days = max(0, current_time - upload_time) / 86400.0
+                    recency_score = max(0.0, 1.0 - (age_days / 30.0)) # Linear decay over 30 days
+                else:
+                    recency_score = 0.0 # Fallback for old vectors without upload_time
+                
+                # Hybrid relevance + recency ranking
+                final_score = (similarity_score * 0.8) + (recency_score * 0.2)
+                
+                matches.append({
+                    "text":       meta.get("text", ""),
+                    "score":      round(final_score, 3),
+                    "similarity": round(similarity_score, 3),
+                    "recency":    round(recency_score, 3),
+                    "filename":   meta.get("filename", "Unknown"),
+                    "doc_id":     meta.get("doc_id", ""),
+                    "chunk_idx":  meta.get("chunk_idx", 0)
+                })
+        
+        # Sort by hybrid final score descending and slice Top-K
+        matches.sort(key=lambda x: x["score"], reverse=True)
+        matches = matches[:top_k]
+        
+        print(f"[RAG DEBUG] Retrieved Top-K chunks:")
+        for idx, m in enumerate(matches, 1):
+            print(f"{idx}. {m['filename']} (score: {m['score']} | sim: {m['similarity']} | recency: {m['recency']})")
+        print(f"[RAG DEBUG] Recency boost applied: YES")
+        
         print(f"[RAG] Query returned {len(matches)} matches (namespace: {namespace})")
         return matches
     except Exception as e:
-        print(f"[RAG DEBUG] Query error: {e}")
+        print(f"[RAG] Query error: {e}")
         return []
 
 
 def delete_document(doc_id: str, user_id: str) -> bool:
     """Delete all chunks of a document from Pinecone."""
-    namespace = user_id
+    namespace = "default"
     try:
         index  = _get_index()
         prefix = f"{namespace}_{doc_id}_"
@@ -268,10 +292,9 @@ def delete_document(doc_id: str, user_id: str) -> bool:
         print(f"[RAG] Delete error: {e}")
         return False
 
-
 def list_documents(user_id: str) -> list:
     """List all unique documents stored for a user."""
-    namespace = user_id
+    namespace = "default"
     try:
         index = _get_index()
         ids   = list(index.list(namespace=namespace))
